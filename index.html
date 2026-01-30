@@ -97,7 +97,6 @@
     
     <!-- Dynamic Manifest Script -->
     <script>
-        // Inject PWA Manifest dynamically for visual purposes (Icon/Theme)
         const manifest = {
             "name": "Nexus App Store",
             "short_name": "Nexus",
@@ -127,7 +126,8 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const APP_VERSION = "4.2"; 
+        const APP_VERSION = "4.9.2"; 
+        const DEFAULT_MUSIC_URL = "https://www.youtube.com/watch?v=mOPN9PC0cSY"; // Lofi Radio Default
 
         const firebaseConfig = {
             apiKey: "AIzaSyDcWSyP6S7LDuGQ1ZjFqKAHCZ8mjwJhEKY",
@@ -144,6 +144,98 @@
         
         const DB_APP_ID = 'nexus-hub-permanent-vault';
 
+        // --- ADVANCED AUDIO SYSTEM (Web Audio API for SFX + YouTube for Music) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const initAudio = () => { if (audioCtx.state === 'suspended') audioCtx.resume(); };
+        window.addEventListener('click', initAudio, { once: true });
+        window.addEventListener('touchstart', initAudio, { once: true });
+
+        const playTone = (freq, type, duration, vol = 0.1, time = 0, ramp = 'linear') => {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + time);
+                
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + time);
+                if (ramp === 'linear') {
+                    gain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + time + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + time + duration);
+                } else {
+                    gain.gain.setValueAtTime(vol, audioCtx.currentTime + time);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + time + duration);
+                }
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + time);
+                osc.stop(audioCtx.currentTime + time + duration);
+            } catch(e) {}
+        };
+
+        const playSound = (name) => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            // Aumentei significativamente o volume de todos os sons
+            switch (name) {
+                case 'click':
+                    playTone(800, 'sine', 0.15, 0.4); // Volume aumentado para 0.4
+                    break;
+                case 'open':
+                    playTone(400, 'sine', 0.3, 0.3, 0); 
+                    playTone(600, 'sine', 0.3, 0.3, 0.1);
+                    break;
+                case 'close':
+                    playTone(600, 'sine', 0.2, 0.3, 0);
+                    playTone(400, 'sine', 0.2, 0.3, 0.1); 
+                    break;
+                case 'robot_in':
+                    // Sons robóticos mais altos
+                    playTone(200, 'square', 0.1, 0.15, 0);
+                    playTone(400, 'square', 0.1, 0.15, 0.1);
+                    playTone(600, 'square', 0.2, 0.15, 0.2);
+                    break;
+                case 'robot_out':
+                    playTone(600, 'sawtooth', 0.1, 0.15, 0);
+                    playTone(300, 'sawtooth', 0.1, 0.15, 0.1);
+                    playTone(100, 'sawtooth', 0.2, 0.15, 0.2);
+                    break;
+                case 'success':
+                    playTone(440, 'sine', 0.2, 0.3, 0);
+                    playTone(554, 'sine', 0.2, 0.3, 0.1);
+                    playTone(659, 'sine', 0.4, 0.3, 0.2);
+                    break;
+                case 'lock':
+                    playTone(150, 'sawtooth', 0.3, 0.2);
+                    playTone(140, 'sawtooth', 0.3, 0.2, 0.1);
+                    break;
+                case 'type':
+                    playTone(1200, 'triangle', 0.05, 0.15);
+                    break;
+            }
+        };
+
+        // Componente de Música Ambiente (YouTube Hidden) - Agora aceita URL dinâmica
+        function YouTubeAudioPlayer({ active, url }) {
+            if (!active || !url) return null;
+            const videoId = getYouTubeID(url);
+            
+            if (!videoId) return null;
+
+            return (
+                <div style={{ position: 'fixed', top: '-2000px', left: '-2000px', opacity: 0, pointerEvents: 'none', zIndex: -9999 }}>
+                    <iframe 
+                        width="100" 
+                        height="100" 
+                        src={`https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&controls=0&showinfo=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1&origin=${window.location.origin}`} 
+                        frameBorder="0" 
+                        allow="autoplay; encrypted-media" 
+                        allowFullScreen
+                    ></iframe>
+                </div>
+            );
+        }
+
         // --- Cores do Sistema ---
         const ACCENT_COLORS = {
             blue: { hex: '#2563eb', tailwind: 'blue-600', text: 'text-blue-500', bg: 'bg-blue-600', ring: 'focus:ring-blue-500', border: 'border-blue-500', soft: 'bg-blue-500/10' },
@@ -155,6 +247,7 @@
         };
 
         const openSystemLink = (url) => {
+            playSound('click');
             if (!url) return alert("Link indisponível.");
             window.open(url, '_blank');
         };
@@ -206,9 +299,15 @@
 
             useEffect(() => {
                 if (mode === 'greeting') {
-                    const timer1 = setTimeout(() => setStage('leave'), 2200);
+                    playSound('robot_in'); // Play entrance sound
+                    const timer1 = setTimeout(() => {
+                        setStage('leave');
+                        playSound('robot_out'); // Play leave sound
+                    }, 2200);
                     const timer2 = setTimeout(onComplete, 3400);
                     return () => { clearTimeout(timer1); clearTimeout(timer2); };
+                } else if (mode === 'notice' || mode === 'maintenance') {
+                    playSound('robot_in');
                 }
             }, [mode, onComplete]);
 
@@ -313,7 +412,7 @@
                             message={config.title}
                             subMessage={config.message}
                         />
-                        <button onClick={onClose} style={{backgroundColor: accentColor}} className="mt-8 w-full py-3.5 rounded-2xl font-bold text-white text-sm shadow-lg active:scale-95 transition-transform animate-scale-in">Entendido</button>
+                        <button onClick={() => { playSound('click'); onClose(); }} style={{backgroundColor: accentColor}} className="mt-8 w-full py-3.5 rounded-2xl font-bold text-white text-sm shadow-lg active:scale-95 transition-transform animate-scale-in">Entendido</button>
                      </div>
                 </div>
             );
@@ -322,7 +421,7 @@
         function IOSSwitch({ checked, onChange }) {
             return (
                 <div 
-                    onClick={() => onChange(!checked)}
+                    onClick={() => { playSound('click'); onChange(!checked); }}
                     className={`relative w-[50px] h-[30px] rounded-full transition-all duration-300 cursor-pointer ${checked ? 'bg-[#34C759]' : 'bg-[#39393D]'}`}
                 >
                     <div className={`absolute top-[2px] w-[26px] h-[26px] bg-white rounded-full shadow-md transition-all duration-300 ${checked ? 'left-[22px]' : 'left-[2px]'}`}></div>
@@ -338,7 +437,7 @@
                     <input 
                         type={type} 
                         value={value} 
-                        onChange={(e) => onChange(e.target.value)} 
+                        onChange={(e) => { playSound('type'); onChange(e.target.value); }}
                         placeholder={placeholder}
                         className={`w-full rounded-xl px-4 py-3 ${colors.input} ${colors.text} placeholder:opacity-50 ${themeMode === 'light' ? 'border border-gray-200' : 'border border-white/5'} outline-none font-medium text-sm transition-all focus:border-[${accentColor}] focus:ring-1 focus:ring-[${accentColor}]`}
                         style={{ caretColor: accentColor }}
@@ -350,7 +449,7 @@
         function TabButton({ active, icon, label, onClick, themeMode, accentColor }) {
             const colors = THEMES[themeMode] || THEMES.amoled;
             return (
-                <button onClick={onClick} className="flex flex-col items-center justify-center flex-1 gap-1 active:scale-90 outline-none transition-all group pt-1">
+                <button onClick={() => { playSound('click'); onClick(); }} className="flex flex-col items-center justify-center flex-1 gap-1 active:scale-90 outline-none transition-all group pt-1">
                     <div className={`transition-all duration-300`} style={{ color: active ? accentColor : undefined }} className={!active ? colors.subtext : ''}>
                         <Icon name={icon} size={24} />
                     </div>
@@ -386,6 +485,7 @@
         function Toast({ title, body, icon, onClose, themeMode }) {
             const colors = THEMES[themeMode] || THEMES.amoled;
             useEffect(() => {
+                playSound('success'); // Sound on Toast
                 const timer = setTimeout(onClose, 3000);
                 return () => clearTimeout(timer);
             }, [onClose]);
@@ -409,11 +509,18 @@
             const handleQuickDownload = (e) => {
                 e.stopPropagation();
                 if (isPreOrder) return;
+                playSound('click');
                 openSystemLink(app.downloadUrl);
             };
 
+            const handleClick = () => {
+                if (isEffectiveLocked) playSound('lock');
+                else playSound('open');
+                onClick();
+            };
+
             return (
-                <div onClick={onClick} className={`flex items-center gap-4 py-3 active:opacity-70 rounded-2xl -mx-3 px-3 transition-colors cursor-pointer group relative`}>
+                <div onClick={handleClick} className={`flex items-center gap-4 py-3 active:opacity-70 rounded-2xl -mx-3 px-3 transition-colors cursor-pointer group relative`}>
                     <div className="relative shrink-0">
                         {isEffectiveLocked ? (
                             <div className={`w-[60px] h-[60px] rounded-[14px] ${colors.card} flex items-center justify-center border ${colors.border} shadow-inner`}>
@@ -485,7 +592,12 @@
             const handleAppClick = (app) => {
                 const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
                 const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
-                if (isEffectiveLocked) { setLockedAppId(app.id); setTimeout(() => setLockedAppId(null), 1000); return; }
+                if (isEffectiveLocked) { 
+                    setLockedAppId(app.id); 
+                    playSound('lock');
+                    setTimeout(() => setLockedAppId(null), 1000); 
+                    return; 
+                }
                 onApp(app);
             };
 
@@ -498,11 +610,11 @@
                         </div>
                         <div className="flex items-center gap-3">
                             {isAdmin && (
-                                <button onClick={onSettings} className={`w-9 h-9 rounded-full flex items-center justify-center ${colors.input} border ${colors.border} active:scale-95 transition-transform`}>
+                                <button onClick={() => { playSound('click'); onSettings(); }} className={`w-9 h-9 rounded-full flex items-center justify-center ${colors.input} border ${colors.border} active:scale-95 transition-transform`}>
                                     <Icon name="Settings" size={18} className={colors.text} />
                                 </button>
                             )}
-                            <button onClick={onProfile} className={`w-9 h-9 rounded-full overflow-hidden ${colors.input} border ${colors.border} shadow-sm active:scale-95 transition-transform`}>
+                            <button onClick={() => { playSound('click'); onProfile(); }} className={`w-9 h-9 rounded-full overflow-hidden ${colors.input} border ${colors.border} shadow-sm active:scale-95 transition-transform`}>
                                 {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <Icon name="User" size={20} className="text-zinc-500 m-auto mt-2" />}
                             </button>
                         </div>
@@ -511,10 +623,10 @@
                     <div className="space-y-10 px-5 pt-2">
                         <div className="flex overflow-x-auto gap-4 no-scrollbar -mx-5 px-5 snap-x snap-mandatory">
                             {filteredHighlights.map(h => (
-                                <div key={h.id} className={`snap-center shrink-0 w-[85vw] max-w-[340px] aspect-[4/5] overflow-hidden relative shadow-ios cursor-pointer active:scale-98 transition-transform ${h.type === 'mosaic' ? 'bg-transparent shadow-none' : `${colors.card} rounded-[32px]`}`} onClick={() => h.type !== 'mosaic' && h.appId && onApp(apps.find(a => a.id === h.appId))}>
+                                <div key={h.id} className={`snap-center shrink-0 w-[85vw] max-w-[340px] aspect-[4/5] overflow-hidden relative shadow-ios cursor-pointer active:scale-98 transition-transform ${h.type === 'mosaic' ? 'bg-transparent shadow-none' : `${colors.card} rounded-[32px]`}`} onClick={() => { if(h.type !== 'mosaic' && h.appId) { playSound('open'); onApp(apps.find(a => a.id === h.appId)); }}}>
                                     {h.type === 'mosaic' ? (
                                         <div className="flex flex-col gap-2 h-full">
-                                            <div className="w-full h-[55%] rounded-[24px] overflow-hidden relative shadow-lg" onClick={(e) => { e.stopPropagation(); h.items && h.items[0].appId && onApp(apps.find(a => a.id === h.items[0].appId)) }}>
+                                            <div className="w-full h-[55%] rounded-[24px] overflow-hidden relative shadow-lg" onClick={(e) => { e.stopPropagation(); playSound('open'); h.items && h.items[0].appId && onApp(apps.find(a => a.id === h.items[0].appId)) }}>
                                                 <img src={h.items[0].image} className="w-full h-full object-cover" />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent p-4 flex flex-col justify-end">
                                                     <p className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest shadow-black drop-shadow-md">{h.items[0].subtitle}</p>
@@ -523,7 +635,7 @@
                                             </div>
                                             <div className="flex gap-2 w-full h-[45%]">
                                                 {[1, 2].map(idx => (
-                                                    <div key={idx} className="flex-1 rounded-[24px] overflow-hidden relative shadow-lg" onClick={(e) => { e.stopPropagation(); h.items && h.items[idx].appId && onApp(apps.find(a => a.id === h.items[idx].appId)) }}>
+                                                    <div key={idx} className="flex-1 rounded-[24px] overflow-hidden relative shadow-lg" onClick={(e) => { e.stopPropagation(); playSound('open'); h.items && h.items[idx].appId && onApp(apps.find(a => a.id === h.items[idx].appId)) }}>
                                                         <img src={h.items[idx].image} className="w-full h-full object-cover" />
                                                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent p-3 flex flex-col justify-end">
                                                             <p className="text-[8px] font-bold text-zinc-300 uppercase tracking-widest shadow-black drop-shadow-md">{h.items[idx].subtitle}</p>
@@ -597,14 +709,19 @@
             const handleAppClick = (app) => {
                 const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
                 const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
-                if (isEffectiveLocked) { setLockedAppId(app.id); setTimeout(() => setLockedAppId(null), 1000); return; }
+                if (isEffectiveLocked) { 
+                    setLockedAppId(app.id); 
+                    playSound('lock');
+                    setTimeout(() => setLockedAppId(null), 1000); 
+                    return; 
+                }
                 onApp(app);
             };
             return (
                 <div className={`view-animate ${colors.bg} min-h-screen transition-colors duration-300`}>
                     <header className={`pt-14 px-5 pb-4 flex justify-between items-end sticky top-0 z-20 border-b ${colors.border} backdrop-blur-xl ${colors.glass} transition-colors duration-300`}>
                         <h1 className={`text-3xl font-extrabold tracking-tight ${colors.text}`}>Busca</h1>
-                        <button onClick={onProfile} className={`w-9 h-9 rounded-full overflow-hidden ${colors.input} border ${colors.border}`}>
+                        <button onClick={() => { playSound('click'); onProfile(); }} className={`w-9 h-9 rounded-full overflow-hidden ${colors.input} border ${colors.border}`}>
                             {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <Icon name="User" size={20} className={`text-zinc-500 m-auto mt-2`} />}
                         </button>
                     </header>
@@ -629,7 +746,12 @@
             const handleAppClick = (app) => {
                 const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
                 const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
-                if (isEffectiveLocked) { setLockedAppId(app.id); setTimeout(() => setLockedAppId(null), 1000); return; }
+                if (isEffectiveLocked) { 
+                    setLockedAppId(app.id); 
+                    playSound('lock');
+                    setTimeout(() => setLockedAppId(null), 1000); 
+                    return; 
+                }
                 onApp(app);
             };
             return (
@@ -646,22 +768,33 @@
         }
 
         // --- NEW Settings Modal (Consolidated Admin) ---
-        function SettingsModal({ onClose, accentColor, themeMode, onAddApp, onAddStory, onSchedule, maintenance, toggleMaintenance, noticeConfig, setNoticeConfig }) {
+        function SettingsModal({ onClose, accentColor, themeMode, onAddApp, onAddStory, onSchedule, maintenance, toggleMaintenance, noticeConfig, setNoticeConfig, isMusicEnabled, toggleMusic, musicUrl, setMusicUrl }) {
             const colors = THEMES[themeMode] || THEMES.amoled;
             const [savingNotice, setSavingNotice] = useState(false);
+            const [configMusicUrl, setConfigMusicUrl] = useState(musicUrl || '');
 
             const saveNotice = async () => {
+                playSound('click');
                 setSavingNotice(true);
                 await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('config').set({ notice: noticeConfig }, { merge: true });
+                playSound('success');
                 setSavingNotice(false);
                 alert("Aviso Global Atualizado!");
+            };
+
+            const saveMusicUrl = async () => {
+                playSound('click');
+                await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('config').set({ musicUrl: configMusicUrl }, { merge: true });
+                setMusicUrl(configMusicUrl);
+                playSound('success');
+                alert("Música de Fundo Atualizada!");
             };
 
             return (
                 <div className={`fixed inset-0 z-[200] ${colors.bg} view-animate flex flex-col`}>
                      <header className={`px-5 pt-14 pb-4 flex justify-between items-center border-b ${colors.border}`}>
                         <h1 className={`text-3xl font-extrabold tracking-tight ${colors.text}`}>Configurações</h1>
-                        <button onClick={onClose} style={{color: accentColor}} className={`w-9 h-9 rounded-full flex items-center justify-center font-bold ${colors.input}`}><Icon name="X" size={20} /></button>
+                        <button onClick={() => { playSound('click'); onClose(); }} style={{color: accentColor}} className={`w-9 h-9 rounded-full flex items-center justify-center font-bold ${colors.input}`}><Icon name="X" size={20} /></button>
                      </header>
                      <div className="flex-1 overflow-y-auto p-5 space-y-8 pb-20">
                          
@@ -669,17 +802,43 @@
                          <section>
                              <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${colors.subtext} ml-2`}>Gerenciar Conteúdo</h3>
                              <div className={`rounded-2xl overflow-hidden ${colors.input}`}>
-                                 <div onClick={onAddApp} className={`p-4 flex items-center justify-between border-b ${colors.border} active:bg-white/5 cursor-pointer`}>
+                                 <div onClick={() => { playSound('click'); onAddApp(); }} className={`p-4 flex items-center justify-between border-b ${colors.border} active:bg-white/5 cursor-pointer`}>
                                      <div className="flex items-center gap-3"><Icon name="PlusSquare" className={colors.text} size={20} /><span className={`font-medium ${colors.text}`}>Adicionar App</span></div>
                                      <Icon name="ChevronRight" className={colors.subtext} size={16} />
                                  </div>
-                                 <div onClick={onAddStory} className={`p-4 flex items-center justify-between border-b ${colors.border} active:bg-white/5 cursor-pointer`}>
+                                 <div onClick={() => { playSound('click'); onAddStory(); }} className={`p-4 flex items-center justify-between border-b ${colors.border} active:bg-white/5 cursor-pointer`}>
                                      <div className="flex items-center gap-3"><Icon name="PlayCircle" className={colors.text} size={20} /><span className={`font-medium ${colors.text}`}>Novo Story</span></div>
                                      <Icon name="ChevronRight" className={colors.subtext} size={16} />
                                  </div>
-                                 <div onClick={onSchedule} className={`p-4 flex items-center justify-between active:bg-white/5 cursor-pointer`}>
+                                 <div onClick={() => { playSound('click'); onSchedule(); }} className={`p-4 flex items-center justify-between active:bg-white/5 cursor-pointer`}>
                                      <div className="flex items-center gap-3"><Icon name="Clock" className={colors.text} size={20} /><span className={`font-medium ${colors.text}`}>Cronograma & Edição</span></div>
                                      <Icon name="ChevronRight" className={colors.subtext} size={16} />
+                                 </div>
+                             </div>
+                         </section>
+
+                         {/* Config de Áudio */}
+                         <section>
+                             <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${colors.subtext} ml-2`}>Configuração de Áudio</h3>
+                             <div className={`p-4 rounded-2xl ${colors.input} space-y-4`}>
+                                 <div className={`flex justify-between items-center border-b ${colors.border} pb-4 mb-2`}>
+                                     <div className="flex items-center gap-3">
+                                        <Icon name="Music" className={colors.text} size={20} />
+                                        <span className={`font-medium ${colors.text}`}>Música Ambiente (Local)</span>
+                                     </div>
+                                     <IOSSwitch checked={isMusicEnabled} onChange={toggleMusic} />
+                                 </div>
+                                 
+                                 <label className={`text-[10px] font-bold uppercase ${colors.subtext}`}>Link do YouTube (Global)</label>
+                                 <div className="flex gap-2">
+                                     <input 
+                                        type="text" 
+                                        placeholder="https://youtube.com/watch?v=..." 
+                                        value={configMusicUrl} 
+                                        onChange={e => setConfigMusicUrl(e.target.value)} 
+                                        className={`flex-1 bg-black/20 rounded-lg p-2 text-sm ${colors.text} outline-none border border-transparent focus:border-[${accentColor}]`} 
+                                     />
+                                     <button onClick={saveMusicUrl} style={{backgroundColor: accentColor}} className="p-2 rounded-lg text-white shadow-md active:scale-95 transition-transform"><Icon name="Save" size={18} /></button>
                                  </div>
                              </div>
                          </section>
@@ -723,7 +882,7 @@
             return (
                 <div className="fixed inset-0 z-[300] bg-black text-white animate-slide-up flex flex-col overflow-y-auto">
                     <header className="h-14 flex items-center justify-between px-4 sticky top-0 bg-black/80 backdrop-blur-xl border-b border-zinc-800 z-30">
-                        <button onClick={onClose} style={{color: accentColor}} className="font-bold flex items-center gap-1 text-sm"><Icon name="ChevronLeft" size={20} /> Voltar</button>
+                        <button onClick={() => { playSound('click'); onClose(); }} style={{color: accentColor}} className="font-bold flex items-center gap-1 text-sm"><Icon name="ChevronLeft" size={20} /> Voltar</button>
                         <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Cronograma</h2>
                         <div className="w-10"></div>
                     </header>
@@ -732,7 +891,7 @@
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Icon name="Clock" style={{color: accentColor}} size={18} /> Todos os Stories</h3>
                             <div className="space-y-3">
                                 {allHighs.map(h => (
-                                    <div key={h.id} onClick={() => onEditHigh(h)} className="flex items-center gap-4 p-3 rounded-2xl bg-zinc-900 border border-zinc-800 active:scale-98 transition-transform">
+                                    <div key={h.id} onClick={() => { playSound('click'); onEditHigh(h); }} className="flex items-center gap-4 p-3 rounded-2xl bg-zinc-900 border border-zinc-800 active:scale-98 transition-transform">
                                         <img src={h.image || h.items?.[0]?.image} className="w-10 h-14 rounded-lg object-cover bg-zinc-800" />
                                         <div className="flex-1 min-w-0">
                                             <p className="font-bold text-sm truncate text-white mb-1">{h.title || h.items?.[0]?.title}</p>
@@ -747,7 +906,7 @@
                             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Icon name="Rocket" style={{color: accentColor}} size={18} /> Todos os Apps</h3>
                             <div className="space-y-3">
                                 {allApps.map(app => (
-                                    <div key={app.id} onClick={() => onEditApp(app)} className="flex items-center gap-4 p-3 rounded-2xl bg-zinc-900 border border-zinc-800 active:scale-98 transition-transform">
+                                    <div key={app.id} onClick={() => { playSound('click'); onEditApp(app); }} className="flex items-center gap-4 p-3 rounded-2xl bg-zinc-900 border border-zinc-800 active:scale-98 transition-transform">
                                         <img src={app.icon} className="w-10 h-10 rounded-xl object-cover bg-zinc-800" />
                                         <div className="flex-1 min-w-0">
                                             <p className="font-bold text-sm truncate text-white mb-1">{app.name}</p>
@@ -809,13 +968,14 @@
                 try {
                     const coll = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('apps');
                     if (editingApp?.id) await coll.doc(editingApp.id).update(payload); else await coll.add(payload);
+                    playSound('success');
                     onClose();
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
             return (
                 <div className="fixed inset-0 z-[150] bg-black text-white animate-slide-up flex flex-col overflow-y-auto">
-                    <header className="flex justify-between items-center p-4 sticky top-0 bg-black/90 backdrop-blur-md border-b border-zinc-800 z-10"><h2 className="text-lg font-bold">Editar App</h2><button onClick={onClose}><Icon name="X" size={24} /></button></header>
+                    <header className="flex justify-between items-center p-4 sticky top-0 bg-black/90 backdrop-blur-md border-b border-zinc-800 z-10"><h2 className="text-lg font-bold">Editar App</h2><button onClick={() => { playSound('click'); onClose(); }}><Icon name="X" size={24} /></button></header>
                     <div className="p-6 space-y-5 max-w-xl mx-auto w-full pb-20">
                         <InputField label="Nome" value={form.name} onChange={v => setForm({...form, name: v})} accentColor={accentColor} />
                         <InputField label="Desenvolvedor" value={form.developer} onChange={v => setForm({...form, developer: v})} accentColor={accentColor} />
@@ -965,13 +1125,14 @@
                 try {
                     const coll = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('highlights');
                     if (editingHighlight?.id) await coll.doc(editingHighlight.id).update(data); else await coll.add(data);
+                    playSound('success');
                     onClose();
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
             return (
                 <div className="fixed inset-0 z-[150] bg-black text-white animate-slide-up flex flex-col overflow-y-auto">
-                    <header className="flex justify-between items-center p-4 sticky top-0 bg-black/90 backdrop-blur-md border-b border-zinc-800 z-10"><h2 className="text-lg font-bold">Editar Story</h2><button onClick={onClose}><Icon name="X" size={24} /></button></header>
+                    <header className="flex justify-between items-center p-4 sticky top-0 bg-black/90 backdrop-blur-md border-b border-zinc-800 z-10"><h2 className="text-lg font-bold">Editar Story</h2><button onClick={() => { playSound('click'); onClose(); }}><Icon name="X" size={24} /></button></header>
                     <div className="p-6 space-y-6 max-w-xl mx-auto w-full pb-20">
                         
                         <div className="space-y-1">
@@ -1072,6 +1233,7 @@
 
                 try {
                     if (mode === 'login' && username === 'DN' && password === 'dnvy2205ZX@') {
+                        playSound('success');
                         onLogin(true, username);
                         return;
                     }
@@ -1081,15 +1243,19 @@
 
                     if (mode === 'login') {
                         if (doc.exists && doc.data().password === password) {
+                            playSound('success');
                             onLogin(false, username, doc.data().image);
                         } else {
+                            playSound('lock');
                             alert("Usuário ou senha incorretos.");
                         }
                     } else {
                         if (doc.exists) {
+                            playSound('lock');
                             alert("Este usuário já existe.");
                         } else {
                             await accountRef.set({ password: password, createdAt: Date.now(), image: '' });
+                            playSound('success');
                             alert("Conta criada com sucesso! Faça login.");
                             setMode('login');
                         }
@@ -1122,7 +1288,7 @@
                             </button>
                         </form>
                         <div className="mt-6">
-                            <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-xs font-bold text-zinc-500 hover:text-white transition-colors">
+                            <button onClick={() => { playSound('click'); setMode(mode === 'login' ? 'register' : 'login'); }} className="text-xs font-bold text-zinc-500 hover:text-white transition-colors">
                                 {mode === 'login' ? 'Não tem uma conta? Criar agora' : 'Já tem conta? Fazer Login'}
                             </button>
                         </div>
@@ -1171,7 +1337,7 @@
                     )}
 
                     <div className={`sticky top-0 z-30 flex justify-between items-center p-4 ${colors.glass} backdrop-blur-xl`}>
-                        <button onClick={onClose} style={{color: accentColor}} className="w-9 h-9 rounded-full bg-zinc-800/50 flex items-center justify-center backdrop-blur-md"><Icon name="ChevronLeft" size={22} /></button>
+                        <button onClick={() => { playSound('click'); onClose(); }} style={{color: accentColor}} className="w-9 h-9 rounded-full bg-zinc-800/50 flex items-center justify-center backdrop-blur-md"><Icon name="ChevronLeft" size={22} /></button>
                     </div>
 
                     <div className="px-5 pb-40 animate-scale-in">
@@ -1274,15 +1440,25 @@
             const handleDevClick = () => {
                 const newCount = devClicks + 1;
                 setDevClicks(newCount);
-                if (newCount === 7) { setShowAdminLogin(true); alert("Modo Dev: Login Admin"); }
+                if (newCount === 7) { 
+                    playSound('success'); 
+                    setShowAdminLogin(true); 
+                    alert("Modo Dev: Login Admin"); 
+                } else {
+                    playSound('click');
+                }
             };
 
             const handleLogin = () => {
                 if (userLogin === 'DN' && passLogin === 'dnvy2205ZX@') {
                     setAdmin(true);
+                    playSound('success');
                     alert("Agora você é Admin! Acesse as Configurações no topo.");
                     onClose();
-                } else alert("Erro.");
+                } else {
+                    playSound('lock');
+                    alert("Erro.");
+                }
             };
 
              const handleFileChange = (e) => {
@@ -1305,7 +1481,7 @@
                     <div className={`${colors.card} w-full max-w-sm rounded-[32px] p-6 shadow-2xl relative border ${colors.border} flex flex-col`}>
                         <header className="flex justify-between items-center mb-6">
                             <h2 className={`text-xl font-bold ${colors.text}`}>Conta</h2>
-                            <button onClick={onClose} style={{color: accentColor}} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${colors.input}`}><Icon name="X" size={18} /></button>
+                            <button onClick={() => { playSound('click'); onClose(); }} style={{color: accentColor}} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${colors.input}`}><Icon name="X" size={18} /></button>
                         </header>
                         <div className="flex flex-col items-center mb-6">
                              <div onClick={() => fileInputRef.current?.click()} className={`w-20 h-20 rounded-full ${colors.input} border-4 ${colors.card} shadow-xl overflow-hidden relative group cursor-pointer`}>
@@ -1326,13 +1502,13 @@
                         <p className={`text-[10px] font-bold uppercase mb-2 ml-1 ${colors.subtext}`}>Tema</p>
                         <div className={`p-1 ${colors.input} rounded-xl mb-4 flex gap-1`}>
                             {['amoled', 'matte', 'light'].map(t => (
-                                <button key={t} onClick={() => setTheme(t)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${theme === t ? (t==='light' ? 'bg-white text-black shadow-sm' : 'bg-zinc-800 text-white shadow-sm') : colors.subtext}`}>{t}</button>
+                                <button key={t} onClick={() => { playSound('click'); setTheme(t); }} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${theme === t ? (t==='light' ? 'bg-white text-black shadow-sm' : 'bg-zinc-800 text-white shadow-sm') : colors.subtext}`}>{t}</button>
                             ))}
                         </div>
                          <p className={`text-[10px] font-bold uppercase mb-2 ml-1 ${colors.subtext}`}>Acento</p>
                         <div className={`p-2 ${colors.input} rounded-xl mb-6 flex justify-between gap-1`}>
                             {Object.entries(ACCENT_COLORS).map(([key, val]) => (
-                                <button key={key} onClick={() => setAccentColor(val.hex)} className={`w-8 h-8 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center ${accentColor === val.hex ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: val.hex }}>{accentColor === val.hex && <Icon name="Check" size={14} className="text-white" />}</button>
+                                <button key={key} onClick={() => { playSound('click'); setAccentColor(val.hex); }} className={`w-8 h-8 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center ${accentColor === val.hex ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: val.hex }}>{accentColor === val.hex && <Icon name="Check" size={14} className="text-white" />}</button>
                             ))}
                         </div>
 
@@ -1360,6 +1536,24 @@
             const [accentColor, setAccentColor] = useState(() => localStorage.getItem('nexus_accent') || ACCENT_COLORS.blue.hex);
             const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('nexus_admin_status') === 'true');
             
+            // Audio State (AUTO PLAY ON)
+            const [isMusicEnabled, setIsMusicEnabled] = useState(true);
+            const [hasInteracted, setHasInteracted] = useState(false);
+            const [musicUrl, setMusicUrl] = useState(DEFAULT_MUSIC_URL); // Default to Lofi
+
+            // Interaction Handler for Audio Policy
+            useEffect(() => {
+                const handleInteraction = () => {
+                    if (!hasInteracted) setHasInteracted(true);
+                };
+                window.addEventListener('click', handleInteraction);
+                window.addEventListener('touchstart', handleInteraction);
+                return () => {
+                    window.removeEventListener('click', handleInteraction);
+                    window.removeEventListener('touchstart', handleInteraction);
+                };
+            }, [hasInteracted]);
+
             // Data
             const [apps, setApps] = useState([]);
             const [highlights, setHighlights] = useState([]);
@@ -1412,6 +1606,10 @@
                 await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('config').set({ maintenance: newState }, { merge: true });
             };
 
+            const toggleMusic = (enabled) => {
+                setIsMusicEnabled(enabled);
+            };
+
             const handleRobotComplete = () => {
                 setShowRobot(false);
                 if (noticeConfig.active) {
@@ -1449,6 +1647,7 @@
                         const data = d.data();
                         setIsMaintenance(data.maintenance || false);
                         setNoticeConfig(data.notice || { active: false, title: '', message: '' });
+                        if(data.musicUrl) setMusicUrl(data.musicUrl);
                     }
                 });
                 const u4 = ref.collection('users').doc(user.uid).collection('profile').doc('info').onSnapshot(d => { if(d.exists && isAdmin) setProfileImage(d.data().image); });
@@ -1471,6 +1670,9 @@
             return (
                 <div className={`h-screen w-full ${colors.bg} overflow-hidden flex flex-col font-sans transition-colors duration-300`}>
                     
+                    {/* AUDIO COMPONENTS - Mounts only after interaction */}
+                    <YouTubeAudioPlayer active={isMusicEnabled && hasInteracted} url={musicUrl} />
+
                     {/* Overlays */}
                     {showRobot && <NexusBot mode="greeting" message={`Olaa, <span style="color: ${accentColor}">${localStorage.getItem('nexus_username') || 'Visitante'}</span>!`} accentColor={accentColor} onComplete={handleRobotComplete} />}
                     {showNotice && !showRobot && <NoticePopup config={noticeConfig} onClose={() => setShowNotice(false)} accentColor={accentColor} />}
@@ -1508,6 +1710,10 @@
                             toggleMaintenance={toggleMaintenance}
                             noticeConfig={noticeConfig}
                             setNoticeConfig={setNoticeConfig}
+                            isMusicEnabled={isMusicEnabled}
+                            toggleMusic={toggleMusic}
+                            musicUrl={musicUrl}
+                            setMusicUrl={setMusicUrl}
                         />
                     )}
 
