@@ -127,7 +127,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const APP_VERSION = "4.0"; 
+        const APP_VERSION = "4.2"; 
 
         const firebaseConfig = {
             apiKey: "AIzaSyDcWSyP6S7LDuGQ1ZjFqKAHCZ8mjwJhEKY",
@@ -477,6 +477,9 @@
             });
 
             const comingSoonApps = apps.filter(a => a.scheduledAt && now < a.scheduledAt && a.isVisibleBeforeLaunch).sort((a,b) => a.scheduledAt - b.scheduledAt).slice(0, 3);
+            // Atualizações: Apps modificados nas últimas 24h
+            const updatesApps = apps.filter(a => a.lastUpdated && (now - a.lastUpdated < 86400000)).sort((a,b) => b.lastUpdated - a.lastUpdated);
+            
             const releasedApps = apps.filter(a => !a.scheduledAt || now >= a.scheduledAt);
 
             const handleAppClick = (app) => {
@@ -551,6 +554,18 @@
                                 </div>
                                 <div className="space-y-1">
                                     {comingSoonApps.map(app => <AppListItem key={app.id} app={app} onClick={() => handleAppClick(app)} isAdmin={isAdmin} lockedAppId={lockedAppId} now={now} themeMode={themeMode} accentColor={accentColor} />)}
+                                </div>
+                            </section>
+                        )}
+
+                        {updatesApps.length > 0 && (
+                            <section>
+                                <div className={`flex items-center justify-between mb-4 border-b ${colors.border} pb-2`}>
+                                    <h3 className="text-xl font-bold" style={{color: accentColor}}>Atualizações</h3>
+                                    <span className={`text-xs font-medium ${colors.subtext}`}>Recentes</span>
+                                </div>
+                                <div className="space-y-1">
+                                    {updatesApps.map(app => <AppListItem key={app.id} app={app} onClick={() => handleAppClick(app)} isAdmin={isAdmin} lockedAppId={lockedAppId} now={now} themeMode={themeMode} accentColor={accentColor} />)}
                                 </div>
                             </section>
                         )}
@@ -783,7 +798,13 @@
             const save = async () => {
                 if (!form.name || !form.icon) return alert("Título e Ícone obrigatórios.");
                 setLoading(true);
-                const payload = { ...form, screenshots: form.screenshots, scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).getTime() : null, unlockSurpriseAt: form.unlockSurpriseAt ? new Date(form.unlockSurpriseAt).getTime() : null };
+                const payload = { 
+                    ...form, 
+                    screenshots: form.screenshots, 
+                    scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).getTime() : null, 
+                    unlockSurpriseAt: form.unlockSurpriseAt ? new Date(form.unlockSurpriseAt).getTime() : null,
+                    lastUpdated: Date.now() 
+                };
                 delete payload.id;
                 try {
                     const coll = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('apps');
@@ -1110,7 +1131,7 @@
             );
         }
 
-        // RESTORED AppDetail
+        // RESTORED AppDetail (FIX: Was missing)
         function AppDetail({ app, onClose, themeMode, accentColor, apps }) {
             const now = Date.now();
             const colors = THEMES[themeMode] || THEMES.amoled;
