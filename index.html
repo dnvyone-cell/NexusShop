@@ -9,7 +9,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Nexus">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5726/5726678.png">
+    <!-- Ícone Nexus Bot (Robô) -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/4712/4712109.png">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/4712/4712109.png">
 
     <!-- Dependências Externas -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -63,6 +65,11 @@
         }
         @keyframes propulsion { 0% { height: 0px; opacity: 0; } 50% { height: 40px; opacity: 1; } 100% { height: 60px; opacity: 0.5; } }
         @keyframes blink { 0%, 90%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+        @keyframes lookAround { 
+            0%, 100% { transform: translateX(0); } 
+            25% { transform: translateX(-6px); } 
+            75% { transform: translateX(6px); } 
+        }
 
         .view-animate { animation: viewTransition 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
         .animate-shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
@@ -72,6 +79,7 @@
         .animate-fly-away { animation: flyAway 1.2s cubic-bezier(0.7, 0, 0.84, 0) forwards; }
         .animate-float { animation: floatBot 3s ease-in-out infinite; }
         .animate-blink { animation: blink 4s infinite; }
+        .animate-look-around { animation: lookAround 4s ease-in-out infinite; }
 
         .shadow-ios { box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
         .shadow-dock { box-shadow: 0 15px 40px -10px rgba(0,0,0,0.5); }
@@ -93,7 +101,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const APP_VERSION = "3.5"; 
+        const APP_VERSION = "3.7"; 
 
         const firebaseConfig = {
             apiKey: "AIzaSyDcWSyP6S7LDuGQ1ZjFqKAHCZ8mjwJhEKY",
@@ -167,7 +175,7 @@
 
         // --- NEXUSBOT COMPONENT (Unified) ---
         function NexusBot({ mode = 'static', message, accentColor, onComplete, subMessage }) {
-            // mode: 'greeting' | 'maintenance' | 'notice'
+            // mode: 'greeting' | 'maintenance' | 'notice' | 'happy'
             const [stage, setStage] = useState(mode === 'greeting' ? 'enter' : 'static');
 
             useEffect(() => {
@@ -180,6 +188,9 @@
 
             const isLeaving = stage === 'leave';
             const animationClass = mode === 'greeting' ? (isLeaving ? 'animate-fly-away' : 'animate-float') : 'animate-float';
+            
+            // Happy mode animation for eyes
+            const eyeAnimation = mode === 'happy' ? 'animate-look-around' : 'animate-blink';
 
             return (
                 <div className={`flex flex-col items-center justify-center ${isLeaving ? 'pointer-events-none' : ''} ${mode === 'greeting' ? 'fixed inset-0 z-[9999] bg-black' : ''}`}>
@@ -193,10 +204,17 @@
                             {/* Head */}
                             <div className="w-full h-full bg-zinc-900 rounded-[30px] border-4 border-zinc-800 flex items-center justify-center relative shadow-2xl overflow-hidden">
                                 {/* Face Screen */}
-                                <div className="w-[80%] h-[60%] bg-black rounded-2xl flex items-center justify-center gap-4 relative overflow-hidden shadow-inner">
-                                    {/* Eyes */}
-                                    <div className={`w-6 h-8 rounded-full animate-blink delay-75 ${mode === 'maintenance' ? 'bg-yellow-500' : ''}`} style={{ backgroundColor: mode === 'maintenance' ? undefined : accentColor }}></div>
-                                    <div className={`w-6 h-8 rounded-full animate-blink ${mode === 'maintenance' ? 'bg-yellow-500' : ''}`} style={{ backgroundColor: mode === 'maintenance' ? undefined : accentColor }}></div>
+                                <div className="w-[80%] h-[60%] bg-black rounded-2xl flex items-center justify-center gap-4 relative overflow-hidden shadow-inner flex-col">
+                                    <div className="flex gap-4 items-center justify-center w-full h-full">
+                                        {/* Eyes */}
+                                        <div className={`w-6 h-8 rounded-full ${eyeAnimation} delay-75 ${mode === 'maintenance' ? 'bg-yellow-500' : ''}`} style={{ backgroundColor: mode === 'maintenance' ? undefined : accentColor }}></div>
+                                        <div className={`w-6 h-8 rounded-full ${eyeAnimation} ${mode === 'maintenance' ? 'bg-yellow-500' : ''}`} style={{ backgroundColor: mode === 'maintenance' ? undefined : accentColor }}></div>
+                                    </div>
+                                    
+                                    {/* Smile for Happy Mode */}
+                                    {mode === 'happy' && (
+                                        <div className="w-8 h-4 border-b-4 rounded-full absolute bottom-4" style={{ borderColor: accentColor }}></div>
+                                    )}
 
                                     {/* Scanline */}
                                     <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent animate-[scan_2s_linear_infinite] opacity-30"></div>
@@ -210,10 +228,12 @@
                         </div>
 
                         {/* Text Bubble */}
-                        <div className={`mt-8 bg-zinc-800 px-6 py-4 rounded-2xl border border-zinc-700 shadow-xl text-center max-w-xs transition-all duration-300 ${isLeaving ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`}>
-                            <p className="text-white font-bold text-lg" dangerouslySetInnerHTML={{ __html: message }}></p>
-                            {subMessage && <p className="text-zinc-400 text-xs mt-2 font-medium">{subMessage}</p>}
-                        </div>
+                        {message && (
+                            <div className={`mt-8 bg-zinc-800 px-6 py-4 rounded-2xl border border-zinc-700 shadow-xl text-center max-w-xs transition-all duration-300 ${isLeaving ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`}>
+                                <p className="text-white font-bold text-lg" dangerouslySetInnerHTML={{ __html: message }}></p>
+                                {subMessage && <p className="text-zinc-400 text-xs mt-2 font-medium">{subMessage}</p>}
+                            </div>
+                        )}
                     </div>
                 </div>
             );
@@ -824,7 +844,7 @@
             );
         }
 
-        // RESTORED HighlightModal
+        // RESTORED HighlightModal with IMAGE UPLOAD
         function HighlightModal({ editingHighlight, apps, onClose, accentColor }) {
             const [form, setForm] = useState({ layout: 'standard', items: [{}, {}, {}] });
             const [loading, setLoading] = useState(false);
@@ -846,6 +866,24 @@
                 const newItems = [...form.items];
                 newItems[index] = { ...newItems[index], [field]: val };
                 setForm({...form, items: newItems});
+            };
+
+            const handleFile = (e, field) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setForm(prev => ({...prev, [field]: reader.result}));
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleMosaicFile = (e, index) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => updateItem(index, 'image', reader.result);
+                    reader.readAsDataURL(file);
+                }
             };
 
             const save = async () => {
@@ -882,7 +920,15 @@
                             <>
                                 <InputField label="Título" value={form.title} onChange={v => setForm({...form, title: v})} accentColor={accentColor} />
                                 <InputField label="Subtítulo" value={form.subtitle} onChange={v => setForm({...form, subtitle: v})} accentColor={accentColor} />
-                                <InputField label="Imagem URL" value={form.image} onChange={v => setForm({...form, image: v})} accentColor={accentColor} />
+                                
+                                <div>
+                                    <InputField label="Imagem URL" value={form.image} onChange={v => setForm({...form, image: v})} accentColor={accentColor} />
+                                    <div className="file-input-wrapper w-full bg-zinc-800 text-center py-2 rounded-lg text-xs font-bold text-zinc-400 mb-4 cursor-pointer hover:bg-zinc-700 transition">
+                                        OU Carregar Imagem do Dispositivo
+                                        <input type="file" accept="image/*" onChange={(e) => handleFile(e, 'image')} />
+                                    </div>
+                                </div>
+
                                 <InputField label="Vídeo URL (Opcional)" value={form.videoUrl} onChange={v => setForm({...form, videoUrl: v})} accentColor={accentColor} />
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Vincular App</label>
@@ -902,7 +948,15 @@
                                 <div className="space-y-4 animate-fade-in">
                                     <InputField label={`Título (${mosaicTab === 0 ? 'Topo' : mosaicTab === 1 ? 'Esq' : 'Dir'})`} value={form.items[mosaicTab].title || ''} onChange={v => updateItem(mosaicTab, 'title', v)} accentColor={accentColor} />
                                     <InputField label="Subtítulo" value={form.items[mosaicTab].subtitle || ''} onChange={v => updateItem(mosaicTab, 'subtitle', v)} accentColor={accentColor} />
-                                    <InputField label="Imagem URL" value={form.items[mosaicTab].image || ''} onChange={v => updateItem(mosaicTab, 'image', v)} accentColor={accentColor} />
+                                    
+                                    <div>
+                                        <InputField label="Imagem URL" value={form.items[mosaicTab].image || ''} onChange={v => updateItem(mosaicTab, 'image', v)} accentColor={accentColor} />
+                                        <div className="file-input-wrapper w-full bg-zinc-800 text-center py-2 rounded-lg text-xs font-bold text-zinc-400 mb-4 cursor-pointer hover:bg-zinc-700 transition">
+                                            OU Carregar Imagem do Dispositivo
+                                            <input type="file" accept="image/*" onChange={(e) => handleMosaicFile(e, mosaicTab)} />
+                                        </div>
+                                    </div>
+
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Vincular App</label>
                                         <select className="w-full bg-zinc-900 text-white rounded-xl p-3 text-sm font-medium border border-zinc-800 outline-none" value={form.items[mosaicTab].appId || ''} onChange={e => updateItem(mosaicTab, 'appId', e.target.value)}>
@@ -938,8 +992,8 @@
             );
         }
 
-        // RESTORED LoginView
-        function LoginView({ onLogin }) {
+        // RESTORED LoginView with NexusBot
+        function LoginView({ onLogin, accentColor }) {
             const [mode, setMode] = useState('login'); // login | register
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
@@ -985,19 +1039,19 @@
             return (
                 <div className="h-screen bg-black flex flex-col items-center justify-center p-8 text-center animate-fade-in relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 to-black z-0"></div>
-                    <div className="w-full max-w-sm z-10 relative">
-                        <div className="w-20 h-20 bg-zinc-900 rounded-[24px] flex items-center justify-center mx-auto mb-8 shadow-2xl border border-zinc-800">
-                            <Icon name="Hexagon" size={40} className="text-blue-500" />
+                    <div className="w-full max-w-sm z-10 relative flex flex-col items-center">
+                        <div className="mb-8 scale-75 transform">
+                            <NexusBot mode="happy" accentColor={accentColor || '#2563eb'} />
                         </div>
                         <h1 className="text-3xl font-black text-white mb-2 tracking-tight">{mode === 'login' ? 'Bem-vindo' : 'Criar Conta'}</h1>
                         <p className="text-zinc-500 text-sm font-medium mb-10">{mode === 'login' ? 'Entre na sua conta Nexus.' : 'Junte-se ao Nexus hoje.'}</p>
-                        <form onSubmit={handleAction} className="space-y-4">
+                        <form onSubmit={handleAction} className="space-y-4 w-full">
                             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-1">
                                 <input type="text" placeholder="Usuário" className="w-full bg-transparent px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-zinc-600" value={username} onChange={(e) => setUsername(e.target.value)} />
                                 <div className="h-[1px] bg-zinc-800 mx-4"></div>
                                 <input type="password" placeholder="Senha" className="w-full bg-transparent px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-zinc-600" value={password} onChange={(e) => setPassword(e.target.value)} />
                             </div>
-                            <button type="submit" disabled={loading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2">
+                            <button type="submit" disabled={loading} style={{backgroundColor: accentColor || '#2563eb'}} className="w-full py-4 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg flex items-center justify-center gap-2">
                                 {loading ? 'Processando...' : (mode === 'login' ? 'Entrar' : 'Cadastrar')}
                             </button>
                         </form>
@@ -1306,16 +1360,14 @@
 
             if (isMaintenance && !isAdmin) return <MaintenanceView onAdminLogin={setAdminState} accentColor={accentColor} />;
             if (view === 'loading') return <div className="h-screen bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 rounded-full animate-spin border-t-transparent" style={{borderColor: accentColor, borderTopColor: 'transparent'}}></div></div>;
-            if (view === 'login') return <LoginView onLogin={handleLogin} />;
+            if (view === 'login') return <LoginView onLogin={handleLogin} accentColor={accentColor} />;
 
             return (
                 <div className={`h-screen w-full ${colors.bg} overflow-hidden flex flex-col font-sans transition-colors duration-300`}>
                     
                     {/* Overlays */}
                     {showRobot && <NexusBot mode="greeting" message={`Olaa, <span style="color: ${accentColor}">${localStorage.getItem('nexus_username') || 'Visitante'}</span>!`} accentColor={accentColor} onComplete={handleRobotComplete} />}
-                    
                     {showNotice && !showRobot && <NoticePopup config={noticeConfig} onClose={() => setShowNotice(false)} accentColor={accentColor} />}
-                    
                     {toast && <Toast title={toast.title} body={toast.body} icon={toast.icon} themeMode={theme} onClose={() => setToast(null)} />}
 
                     <div className="flex-1 overflow-y-auto pb-40 no-scrollbar relative">
