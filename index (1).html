@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Nexus App Store</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Nexus">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5726/5726678.png">
+
+    <!-- Dependências Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase SDK Compat -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap');
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; 
+            background-color: #000000; 
+            color: white;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            overflow: hidden;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes loading-bar { 
+            from { transform: translateX(-100%); } 
+            to { transform: translateX(250%); } 
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px) rotate(-5deg); }
+            75% { transform: translateX(4px) rotate(5deg); }
+        }
+
+        @keyframes toast-slide-in {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .animate-shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        .animate-toast-in { animation: toast-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        .safe-top { padding-top: env(safe-area-inset-top); }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+        .shadow-ios { box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+        .shadow-dock { box-shadow: 0 15px 40px -10px rgba(0,0,0,0.5); }
+        
+        .btn-get {
+            border-radius: 9999px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+        .btn-get:active { transform: scale(0.96); }
+
+        .app-icon {
+            border-radius: 22%;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.1);
+        }
+
+        input[type="date"], input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+        .yt-iframe { pointer-events: none; transform: scale(1.5); transform-origin: center; }
+        
+        /* Custom File Input Style */
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .file-input-wrapper input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // VERSÃO ATUAL DO SEU APP
+        const APP_VERSION = "3.0"; 
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDcWSyP6S7LDuGQ1ZjFqKAHCZ8mjwJhEKY",
+            authDomain: "nexus-hub-159db.firebaseapp.com",
+            projectId: "nexus-hub-159db",
+            storageBucket: "nexus-hub-159db.firebasestorage.app",
+            messagingSenderId: "400199878551",
+            appId: "1:400199878551:web:4f58353584daffbeb026d2"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        const DB_APP_ID = 'nexus-hub-permanent-vault';
+
+        // --- Helper de Download Universal ---
+        const openSystemLink = (url) => {
+            if (!url) return alert("Link indisponível.");
+            window.open(url, '_system');
+        };
+
+        // --- Theme System ---
+        const THEMES = {
+            amoled: { bg: 'bg-black', text: 'text-white', card: 'bg-[#1c1c1e]', border: 'border-white/10', subtext: 'text-zinc-500', glass: 'bg-black/80', input: 'bg-zinc-900', dock: 'bg-[#121212]/80' },
+            matte: { bg: 'bg-[#121212]', text: 'text-zinc-100', card: 'bg-[#1e1e1e]', border: 'border-white/5', subtext: 'text-zinc-400', glass: 'bg-[#121212]/90', input: 'bg-[#252525]', dock: 'bg-[#1E1E1E]/80' },
+            light: { bg: 'bg-[#f2f2f7]', text: 'text-black', card: 'bg-white', border: 'border-black/5', subtext: 'text-zinc-500', glass: 'bg-[#f2f2f7]/90', input: 'bg-white', dock: 'bg-white/80' }
+        };
+
+        // --- Helpers ---
+        const toLocalDatetimeString = (timestamp) => {
+            if (!timestamp) return "";
+            const date = new Date(timestamp);
+            const pad = (n) => n.toString().padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        };
+
+        const formatShortDate = (timestamp) => {
+            if (!timestamp) return "";
+            const date = new Date(timestamp);
+            return date.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' }).toUpperCase();
+        };
+
+        const getYouTubeID = (url) => {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        };
+
+        // --- Notification Logic (Hybrid System) ---
+        const sendNotification = (title, body, icon) => {
+            try {
+                if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+                    new Notification(title, { body, icon, tag: 'nexus-update' });
+                    return;
+                }
+            } catch (e) { console.log("Notificação nativa indisponível"); }
+
+            const event = new CustomEvent('nexus-toast', { detail: { title, body, icon } });
+            window.dispatchEvent(event);
+        };
+
+        const requestNotificationPermission = async () => {
+            if (typeof Notification === "undefined") {
+                console.log("Sem suporte a API Notification. Ativando modo In-App.");
+                return 'granted';
+            }
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === "granted") {
+                    sendNotification("Notificações Ativadas", "Você receberá alertas nativos ou no app!", "https://cdn-icons-png.flaticon.com/512/5726/5726678.png");
+                }
+                return permission;
+            } catch (e) {
+                console.error("Erro permissão:", e);
+                return 'granted';
+            }
+        };
+
+        const setupPWA = () => {
+            try {
+                const manifest = {
+                    "name": "Nexus Store",
+                    "short_name": "Nexus",
+                    "start_url": window.location.href,
+                    "display": "standalone",
+                    "background_color": "#000000",
+                    "theme_color": "#000000",
+                    "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/5726/5726678.png", "sizes": "512x512", "type": "image/png" }]
+                };
+                const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+                const link = document.createElement('link'); link.rel = 'manifest'; link.href = URL.createObjectURL(blob);
+                document.head.appendChild(link);
+            } catch (e) {}
+        };
+
+        // --- Components ---
+
+        function Icon({ name, size = 24, className = "" }) {
+            const containerRef = useRef(null);
+            useEffect(() => {
+                if (window.lucide && containerRef.current && name) {
+                    const kebabName = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+                    containerRef.current.innerHTML = `<i data-lucide="${kebabName}"></i>`;
+                    window.lucide.createIcons({ root: containerRef.current, attrs: { strokeWidth: 2, width: size, height: size, class: className } });
+                }
+            }, [name, size, className]);
+            return <span ref={containerRef} className="flex items-center justify-center pointer-events-none"></span>;
+        }
+
+        function InputField({ label, value, onChange, type = "text", placeholder = "", themeMode }) {
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            return (
+                <div className="mb-4 w-full text-left">
+                    <label className={`block text-[10px] font-bold mb-2 uppercase tracking-wide ml-1 ${colors.subtext}`}>{label}</label>
+                    <input 
+                        type={type} 
+                        value={value} 
+                        onChange={(e) => onChange(e.target.value)} 
+                        placeholder={placeholder}
+                        className={`w-full rounded-xl px-4 py-3 ${colors.input} ${colors.text} placeholder:opacity-50 ${themeMode === 'light' ? 'border border-gray-200' : 'border border-white/5'} focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium text-sm transition-all`}
+                    />
+                </div>
+            );
+        }
+
+        function TabButton({ active, icon, label, onClick, themeMode }) {
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            return (
+                <button onClick={onClick} className="flex flex-col items-center justify-center flex-1 gap-1 active:scale-90 outline-none transition-all group pt-1">
+                    <div className={`transition-all duration-300 ${active ? 'text-blue-500 -translate-y-1' : colors.subtext}`}>
+                        <Icon name={icon} size={24} />
+                    </div>
+                    {active && <span className="w-1 h-1 rounded-full bg-blue-500 absolute bottom-1.5 transition-all animate-scale-in"></span>}
+                </button>
+            );
+        }
+
+        function PlatformBadge({ type }) {
+            const isPC = type === 'PC';
+            return (
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-[2px] rounded-[4px] border ml-1.5 opacity-90 ${isPC ? 'text-purple-400 border-purple-500/30 bg-purple-500/10' : 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'}`}>
+                    {isPC ? 'PC' : 'MB'}
+                </span>
+            );
+        }
+
+        function VideoPlayer({ url, image }) {
+            const ytId = useMemo(() => getYouTubeID(url), [url]);
+            const handleTimeUpdate = (e) => { if (e.target.currentTime >= 60) { e.target.currentTime = 0; e.target.play().catch(() => {}); } };
+            if (!url) return <img src={image} className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500" />;
+            if (ytId) {
+                return (
+                    <div className="absolute inset-0 bg-black overflow-hidden rounded-[inherit]">
+                        <iframe src={`https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${ytId}&end=60&playsinline=1&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&enablejsapi=1`} className="absolute inset-0 w-full h-full object-cover yt-iframe" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                        <div className="absolute inset-0 bg-transparent z-10"></div>
+                    </div>
+                );
+            }
+            return <video src={url} poster={image} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" onTimeUpdate={handleTimeUpdate} />;
+        }
+
+        function Toast({ title, body, icon, onClose, themeMode }) {
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            useEffect(() => {
+                const timer = setTimeout(onClose, 4000);
+                return () => clearTimeout(timer);
+            }, [onClose]);
+            return (
+                <div className={`fixed top-4 left-4 right-4 z-[9999] animate-toast-in flex items-center gap-3 p-3 rounded-2xl ${colors.card} border ${colors.border} shadow-2xl shadow-black/50 backdrop-blur-md cursor-pointer`} onClick={onClose}>
+                    <img src={icon || "https://cdn-icons-png.flaticon.com/512/5726/5726678.png"} className="w-10 h-10 rounded-xl bg-zinc-800 object-cover" />
+                    <div className="flex-1 min-w-0">
+                        <h4 className={`text-sm font-bold ${colors.text}`}>{title}</h4>
+                        <p className={`text-xs ${colors.subtext} truncate`}>{body}</p>
+                    </div>
+                </div>
+            );
+        }
+
+        function AppListItem({ app, onClick, isAdmin, onEdit, lockedAppId, now, themeMode }) {
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            const isPreOrder = app.scheduledAt && now < app.scheduledAt;
+            const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
+            const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
+            
+            const handleQuickDownload = (e) => {
+                e.stopPropagation();
+                if (isPreOrder) return;
+                openSystemLink(app.downloadUrl);
+            };
+
+            return (
+                <div onClick={onClick} className={`flex items-center gap-4 py-3 active:opacity-70 rounded-2xl -mx-3 px-3 transition-colors cursor-pointer group relative`}>
+                    <div className="relative shrink-0">
+                        {isEffectiveLocked ? (
+                            <div className={`w-[60px] h-[60px] rounded-[14px] ${colors.card} flex items-center justify-center border ${colors.border} shadow-inner`}>
+                                <span className={`text-2xl font-black ${colors.subtext}`}>?</span>
+                            </div>
+                        ) : (
+                            <img src={app.icon} className="w-[60px] h-[60px] app-icon object-cover bg-zinc-800" />
+                        )}
+                        {lockedAppId === app.id && (
+                            <div className="absolute inset-0 bg-black/60 rounded-[14px] flex items-center justify-center animate-fade-in z-20 backdrop-blur-[1px]">
+                                <div className="animate-shake text-white"><Icon name="Lock" size={20} /></div>
+                            </div>
+                        )}
+                        {isAdmin && <button onClick={(e) => {e.stopPropagation(); onEdit(app)}} className="absolute -top-2 -right-2 bg-blue-600 p-1.5 rounded-full text-white shadow-lg border-2 border-black active:scale-90 transition-all z-10"><Icon name="Edit2" size={10} /></button>}
+                    </div>
+                    
+                    <div className={`flex-1 min-w-0 flex flex-col justify-center h-full border-b ${colors.border} pb-3 group-last:border-none pt-1`}>
+                        <div className="flex justify-between items-center">
+                            <div className="flex-1 min-w-0 pr-3">
+                                <h4 className={`font-semibold text-[15px] leading-tight truncate mb-0.5 ${colors.text} ${isEffectiveLocked ? 'opacity-50' : ''}`}>
+                                    {isEffectiveLocked ? "Confidencial" : app.name}
+                                    {app.isMod && !isEffectiveLocked && <span className="ml-1.5 bg-blue-500/20 text-blue-400 text-[9px] px-1 py-0.5 rounded font-bold align-middle tracking-wider">MOD</span>}
+                                </h4>
+                                <p className={`text-[12px] font-medium truncate ${colors.subtext}`}>
+                                    {isEffectiveLocked ? "Em breve..." : app.category}
+                                </p>
+                            </div>
+                            
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                <button 
+                                    onClick={handleQuickDownload}
+                                    className={`btn-get px-4 py-1.5 text-[10px] flex items-center gap-1.5 ${themeMode === 'light' ? 'bg-blue-100 text-blue-600' : 'bg-white/10 text-blue-400'} ${isPreOrder ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                    <Icon name="Download" size={12} strokeWidth={3} />
+                                    {isPreOrder ? 'AGUARDE' : 'OBTER'}
+                                </button>
+                                <div className="flex items-center justify-end w-full pr-1">
+                                    {isPreOrder && <span className={`text-[9px] font-bold uppercase mr-1 ${colors.subtext}`}>{formatShortDate(app.scheduledAt)}</span>}
+                                    <PlatformBadge type={app.platform} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Core Views Definitions (The Missing Pieces) ---
+
+        function SearchView({ apps, onApp, onProfile, onNotifications, profileImage, themeMode }) {
+            const [query, setQuery] = useState('');
+            const [lockedAppId, setLockedAppId] = useState(null);
+            const now = Date.now();
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            
+            const filtered = apps.filter(a => {
+                const isReleased = !a.scheduledAt || now >= a.scheduledAt;
+                const matches = a.name.toLowerCase().includes(query.toLowerCase());
+                return matches && (isReleased || a.isVisibleBeforeLaunch);
+            });
+
+            const handleAppClick = (app) => {
+                const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
+                const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
+                if (isEffectiveLocked) { setLockedAppId(app.id); setTimeout(() => setLockedAppId(null), 1000); return; }
+                onApp(app);
+            };
+
+            return (
+                <div className={`animate-fade-in ${colors.bg} min-h-screen transition-colors duration-300`}>
+                    <header className={`pt-14 px-5 pb-4 flex justify-between items-end sticky top-0 z-20 border-b ${colors.border} backdrop-blur-xl ${colors.glass} transition-colors duration-300`}>
+                        <h1 className={`text-3xl font-extrabold tracking-tight ${colors.text}`}>Busca</h1>
+                        <div className="flex items-center gap-3">
+                            <button onClick={onNotifications} className={`w-9 h-9 rounded-full flex items-center justify-center ${colors.input} border ${colors.border} active:scale-95 transition-transform`}>
+                                <Icon name="Bell" size={18} className={colors.text} />
+                            </button>
+                            <button onClick={onProfile} className={`w-9 h-9 rounded-full overflow-hidden ${colors.input} border ${colors.border}`}>
+                                {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <Icon name="User" size={20} className={`text-zinc-500 m-auto mt-2`} />}
+                            </button>
+                        </div>
+                    </header>
+                    <div className="px-5 pt-2 pb-40">
+                        <div className="relative mb-6">
+                            <Icon name="Search" size={18} className="absolute left-3 top-3 text-zinc-500" />
+                            <input className={`w-full ${colors.input} ${colors.text} rounded-xl pl-10 pr-4 py-2.5 text-[15px] outline-none placeholder:text-zinc-500 font-medium transition-colors duration-300`} placeholder="Jogos, Apps, Histórias..." value={query} onChange={(e) => setQuery(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                            {filtered.length === 0 ? <p className={`text-center ${colors.subtext} mt-10 font-medium`}>Nenhum resultado.</p> : 
+                                filtered.map(app => <AppListItem key={app.id} app={app} onClick={() => handleAppClick(app)} lockedAppId={lockedAppId} now={now} themeMode={themeMode} />)
+                            }
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function GenericTabView({ title, apps, onApp, isAdmin, onEdit, themeMode }) {
+            const now = Date.now();
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            const visibleApps = apps.filter(a => (!a.scheduledAt || now >= a.scheduledAt) || a.isVisibleBeforeLaunch);
+            const [lockedAppId, setLockedAppId] = useState(null);
+
+            const handleAppClick = (app) => {
+                const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
+                const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
+                if (isEffectiveLocked) { setLockedAppId(app.id); setTimeout(() => setLockedAppId(null), 1000); return; }
+                onApp(app);
+            };
+
+            return (
+                <div className={`animate-fade-in ${colors.bg} min-h-screen transition-colors duration-300`}>
+                    <header className={`pt-14 px-5 pb-6 sticky top-0 z-20 border-b ${colors.border} backdrop-blur-xl ${colors.glass} transition-colors duration-300`}>
+                        <h1 className={`text-3xl font-extrabold tracking-tight ${colors.text}`}>{title}</h1>
+                    </header>
+                    <div className="px-5 pt-2 pb-40 space-y-1">
+                        {visibleApps.map(app => <AppListItem key={app.id} app={app} onClick={() => handleAppClick(app)} isAdmin={isAdmin} onEdit={onEdit} lockedAppId={lockedAppId} now={now} themeMode={themeMode} />)}
+                        {visibleApps.length === 0 && <div className={`text-center ${colors.subtext} mt-20`}>Vazio</div>}
+                    </div>
+                </div>
+            );
+        }
+
+        function TodayView({ apps, highlights, onProfile, onNotifications, onApp, isAdmin, onEdit, profileImage, themeMode, setShowScheduled, setEditingApp, setShowAdminModal }) {
+            const now = Date.now();
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            const [lockedAppId, setLockedAppId] = useState(null);
+            
+            // Filter highlights
+            const filteredHighlights = highlights.filter(h => {
+                if(h.isHidden) return false;
+                const isLive = !h.scheduledAt || now >= h.scheduledAt;
+                const isPaused = h.removedAt && now >= h.removedAt && (!h.reactivatedAt || now < h.reactivatedAt);
+                if(!isLive || isPaused) return false;
+                if(h.recurringDays?.length > 0) {
+                    if(!h.recurringDays.includes(new Date().getDay())) return false;
+                }
+                return true;
+            });
+
+            // Apps logic
+            const comingSoonApps = apps.filter(a => a.scheduledAt && now < a.scheduledAt && a.isVisibleBeforeLaunch).sort((a,b) => a.scheduledAt - b.scheduledAt).slice(0, 3);
+            const releasedApps = apps.filter(a => !a.scheduledAt || now >= a.scheduledAt);
+
+            const handleAppClick = (app) => {
+                const unlockTime = app.unlockSurpriseAt || app.scheduledAt;
+                const isEffectiveLocked = app.isLocked && (!unlockTime || now < unlockTime);
+                if (isEffectiveLocked) { setLockedAppId(app.id); setTimeout(() => setLockedAppId(null), 1000); return; }
+                onApp(app);
+            };
+
+            return (
+                <div className={`animate-fade-in ${colors.bg} min-h-screen pb-40 transition-colors duration-300 relative`}>
+                    <header className={`pt-14 px-5 pb-4 flex justify-between items-center sticky top-0 z-20 backdrop-blur-xl ${colors.glass} transition-colors duration-300`}>
+                        <div>
+                            <p className={`text-[11px] font-bold ${colors.subtext} uppercase tracking-wide mb-0.5`}>{new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                            <h1 className={`text-3xl font-extrabold tracking-tight ${colors.text}`}>Hoje</h1>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button onClick={onNotifications} className={`w-9 h-9 rounded-full flex items-center justify-center ${colors.input} border ${colors.border} active:scale-95 transition-transform`}>
+                                <Icon name="Bell" size={18} className={colors.text} />
+                            </button>
+                            <button onClick={onProfile} className={`w-9 h-9 rounded-full overflow-hidden ${colors.input} border ${colors.border} shadow-sm active:scale-95 transition-transform`}>
+                                {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <Icon name="User" size={20} className="text-zinc-500 m-auto mt-2" />}
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="space-y-10 px-5 pt-2">
+                        <div className="flex overflow-x-auto gap-4 no-scrollbar -mx-5 px-5 snap-x snap-mandatory">
+                            {filteredHighlights.map(h => (
+                                <div key={h.id} className={`snap-center shrink-0 w-[85vw] max-w-[340px] aspect-[4/5] overflow-hidden relative shadow-ios cursor-pointer active:scale-98 transition-transform ${h.type === 'mosaic' ? 'bg-transparent shadow-none' : `${colors.card} rounded-[32px]`}`} onClick={() => h.type !== 'mosaic' && h.appId && onApp(apps.find(a => a.id === h.appId))}>
+                                    
+                                    {h.type === 'mosaic' ? (
+                                        <div className="flex flex-col gap-2 h-full">
+                                            {/* Mosaic Top */}
+                                            <div className="w-full h-[55%] rounded-[24px] overflow-hidden relative shadow-lg" onClick={(e) => { e.stopPropagation(); h.items && h.items[0].appId && onApp(apps.find(a => a.id === h.items[0].appId)) }}>
+                                                <img src={h.items[0].image} className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent p-4 flex flex-col justify-end">
+                                                    <p className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest shadow-black drop-shadow-md">{h.items[0].subtitle}</p>
+                                                    <h3 className="text-xl font-extrabold text-white uppercase leading-none drop-shadow-lg">{h.items[0].title}</h3>
+                                                </div>
+                                            </div>
+                                            {/* Mosaic Bottom Row */}
+                                            <div className="flex gap-2 w-full h-[45%]">
+                                                {[1, 2].map(idx => (
+                                                    <div key={idx} className="flex-1 rounded-[24px] overflow-hidden relative shadow-lg" onClick={(e) => { e.stopPropagation(); h.items && h.items[idx].appId && onApp(apps.find(a => a.id === h.items[idx].appId)) }}>
+                                                        <img src={h.items[idx].image} className="w-full h-full object-cover" />
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent p-3 flex flex-col justify-end">
+                                                            <p className="text-[8px] font-bold text-zinc-300 uppercase tracking-widest shadow-black drop-shadow-md">{h.items[idx].subtitle}</p>
+                                                            <h4 className="text-sm font-extrabold text-white uppercase leading-none drop-shadow-lg">{h.items[idx].title}</h4>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <VideoPlayer url={h.videoUrl} image={h.image} />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent p-8 flex flex-col justify-end">
+                                                <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest mb-2 shadow-black drop-shadow-md">{h.subtitle}</p>
+                                                <h2 className="text-4xl font-extrabold text-white uppercase leading-none drop-shadow-lg tracking-tight">{h.title}</h2>
+                                            </div>
+                                        </>
+                                    )}
+                                    
+                                </div>
+                            ))}
+                        </div>
+
+                        {comingSoonApps.length > 0 && (
+                            <section>
+                                <div className={`flex items-center justify-between mb-4 border-b ${colors.border} pb-2`}>
+                                    <h3 className="text-xl font-bold text-blue-500">Em Breve</h3>
+                                    <span className={`text-xs font-medium ${colors.subtext}`}>Pré-venda</span>
+                                </div>
+                                <div className="space-y-1">
+                                    {comingSoonApps.map(app => <AppListItem key={app.id} app={app} onClick={() => handleAppClick(app)} isAdmin={isAdmin} onEdit={onEdit} lockedAppId={lockedAppId} now={now} themeMode={themeMode} />)}
+                                </div>
+                            </section>
+                        )}
+
+                        {Array.from(new Set(releasedApps.map(a => a.category))).map(cat => (
+                            <section key={cat}>
+                                <h3 className={`text-xl font-bold mb-4 ${colors.text} border-b ${colors.border} pb-2`}>{cat}</h3>
+                                <div className="space-y-1">
+                                    {releasedApps.filter(a => a.category === cat).map(app => <AppListItem key={app.id} app={app} onClick={() => handleAppClick(app)} isAdmin={isAdmin} onEdit={onEdit} lockedAppId={lockedAppId} now={now} themeMode={themeMode} />)}
+                                </div>
+                            </section>
+                        ))}
+                    </div>
+
+                    {isAdmin && (
+                        <div className="fixed bottom-32 right-5 flex flex-col gap-3 z-30">
+                            <button onClick={() => setShowScheduled(true)} className={`w-12 h-12 ${colors.input} backdrop-blur rounded-full flex items-center justify-center ${colors.text} shadow-lg border ${colors.border} active:scale-90 transition-transform`}><Icon name="Clock" size={20} /></button>
+                            <button onClick={() => { setEditingApp(null); setShowAdminModal(true); }} className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-blue-900/30 active:scale-90 transition-transform"><Icon name="Plus" size={24} /></button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- Other Views ---
+
+        function MaintenanceView({ onAdminLogin }) {
+            const [showAuth, setShowAuth] = useState(false);
+            const [userLogin, setUserLogin] = useState('');
+            const [passLogin, setPassLogin] = useState('');
+            
+            const tryLogin = () => { 
+                if (userLogin === 'DN' && passLogin === 'dnvy2205ZX@') onAdminLogin(true); 
+                else alert('Acesso negado'); 
+            };
+
+            return (
+                <div className="fixed inset-0 z-[999] bg-black flex flex-col items-center justify-center p-8 text-center animate-fade-in text-white">
+                    <div className="w-24 h-24 rounded-full bg-zinc-900 border-4 border-blue-600 flex items-center justify-center animate-pulse mb-8 relative">
+                        <Icon name="RefreshCcw" size={40} className="text-blue-500 animate-[spin_3s_linear_infinite]" />
+                        <div className="absolute -bottom-2 -right-2 bg-blue-600 rounded-full p-2 border-4 border-black"><Icon name="Settings" size={16} className="text-white" /></div>
+                    </div>
+                    <h1 className="text-3xl font-black uppercase tracking-tight mb-4">Atualizando</h1>
+                    <p className="text-zinc-500 font-medium text-sm max-w-xs leading-relaxed">Melhorando a experiência Nexus para você.</p>
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 mt-8 w-full max-w-xs">
+                        <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-bold text-blue-500 uppercase">Tempo Estimado</span><span className="text-[10px] font-bold text-white">~2 Min</span></div>
+                        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-blue-600 w-1/2 animate-[loading-bar_2s_infinite_ease-in-out]"></div></div>
+                    </div>
+                    <div className="fixed bottom-10 w-full flex flex-col items-center gap-4">
+                        {showAuth && (
+                            <div className="animate-slide-up bg-zinc-900 border border-zinc-800 p-2 rounded-xl flex flex-col gap-2 w-64 shadow-2xl">
+                                <input type="text" placeholder="Usuário" className="bg-transparent text-white text-xs font-bold outline-none border-b border-zinc-700 py-1" value={userLogin} onChange={e => setUserLogin(e.target.value)} />
+                                <div className="flex gap-2">
+                                    <input type="password" placeholder="Senha" className="bg-transparent text-white text-xs font-bold outline-none flex-1" value={passLogin} onChange={e => setPassLogin(e.target.value)} />
+                                    <button type="button" onClick={tryLogin} className="bg-blue-600 p-1.5 rounded-lg text-white active:scale-95 transition-all"><Icon name="ArrowRight" size={12} /></button>
+                                </div>
+                            </div>
+                        )}
+                        <div onClick={() => setShowAuth(!showAuth)} className="opacity-5 hover:opacity-100 transition-opacity cursor-pointer p-2"><span className="text-xl">🍋</span></div>
+                    </div>
+                </div>
+            );
+        }
+
+        function LoginView({ onLogin }) {
+            const [mode, setMode] = useState('login'); // login | register
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleAction = async (e) => {
+                e.preventDefault();
+                if (!username || !password) return alert('Preencha todos os campos.');
+                setLoading(true);
+
+                try {
+                    // Admin Hardcoded Check
+                    if (mode === 'login' && username === 'DN' && password === 'dnvy2205ZX@') {
+                        onLogin(true, username);
+                        return;
+                    }
+
+                    const accountRef = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('accounts').collection('users').doc(username);
+                    const doc = await accountRef.get();
+
+                    if (mode === 'login') {
+                        if (doc.exists && doc.data().password === password) {
+                            onLogin(false, username, doc.data().image);
+                        } else {
+                            alert("Usuário ou senha incorretos.");
+                        }
+                    } else {
+                        // Register
+                        if (doc.exists) {
+                            alert("Este usuário já existe.");
+                        } else {
+                            await accountRef.set({
+                                password: password,
+                                createdAt: Date.now(),
+                                image: ''
+                            });
+                            alert("Conta criada com sucesso! Faça login.");
+                            setMode('login');
+                        }
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert("Erro ao processar. Tente novamente.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="h-screen bg-black flex flex-col items-center justify-center p-8 text-center animate-fade-in relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 to-black z-0"></div>
+                    
+                    <div className="w-full max-w-sm z-10 relative">
+                        <div className="w-20 h-20 bg-zinc-900 rounded-[24px] flex items-center justify-center mx-auto mb-8 shadow-2xl border border-zinc-800">
+                            <Icon name="Hexagon" size={40} className="text-blue-500" />
+                        </div>
+                        
+                        <h1 className="text-3xl font-black text-white mb-2 tracking-tight">{mode === 'login' ? 'Bem-vindo' : 'Criar Conta'}</h1>
+                        <p className="text-zinc-500 text-sm font-medium mb-10">{mode === 'login' ? 'Entre na sua conta Nexus.' : 'Junte-se ao Nexus hoje.'}</p>
+
+                        <form onSubmit={handleAction} className="space-y-4">
+                            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-1">
+                                <input 
+                                    type="text" 
+                                    placeholder="Usuário" 
+                                    className="w-full bg-transparent px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-zinc-600"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                />
+                                <div className="h-[1px] bg-zinc-800 mx-4"></div>
+                                <input 
+                                    type="password" 
+                                    placeholder="Senha" 
+                                    className="w-full bg-transparent px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-zinc-600"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                            </div>
+
+                            <button type="submit" disabled={loading} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2">
+                                {loading ? 'Processando...' : (mode === 'login' ? 'Entrar' : 'Cadastrar')}
+                            </button>
+                        </form>
+
+                        <div className="mt-6">
+                            <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-xs font-bold text-zinc-500 hover:text-white transition-colors">
+                                {mode === 'login' ? 'Não tem uma conta? Criar agora' : 'Já tem conta? Fazer Login'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function NotificationsModal({ onClose, themeMode, apps }) {
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            const [permission, setPermission] = useState('default');
+
+            useEffect(() => {
+                if (typeof Notification !== 'undefined') {
+                    setPermission(Notification.permission);
+                } else {
+                    setPermission('granted'); 
+                }
+            }, []);
+
+            const request = async () => {
+                const p = await requestNotificationPermission();
+                setPermission(p);
+            };
+
+            const recentApps = [...apps].sort((a,b) => (b.scheduledAt || b.uploadDate || 0) - (a.scheduledAt || a.uploadDate || 0)).slice(0, 8);
+
+            return (
+                <div className={`fixed inset-0 z-[9999] ${colors.bg} animate-slide-up flex flex-col overflow-y-auto min-h-screen`} style={{backgroundColor: themeMode === 'light' ? '#f2f2f7' : '#000000'}}>
+                     <header className={`p-4 flex items-center justify-between border-b ${colors.border} sticky top-0 ${colors.glass} backdrop-blur-xl z-10`}>
+                        <h2 className={`text-xl font-bold ${colors.text}`}>Notificações</h2>
+                        <button onClick={onClose}><Icon name="X" className={colors.text} /></button>
+                     </header>
+                     <div className={`p-4 space-y-6 pb-20 ${colors.text}`}>
+                         <div className={`p-4 rounded-2xl border ${colors.border} ${colors.card} flex items-center justify-between shadow-lg`}>
+                             <div>
+                                 <p className={`font-bold text-sm ${colors.text}`}>Alertas de Novos Apps</p>
+                                 <p className={`text-xs ${colors.subtext}`}>{permission === 'granted' ? 'Alertas In-App/Nativos Ativos.' : 'Ative para não perder nada.'}</p>
+                             </div>
+                             <button onClick={request} className={`px-4 py-2 rounded-full text-[10px] font-bold tracking-wide uppercase shadow-lg ${permission === 'granted' ? 'bg-green-500/20 text-green-500' : 'bg-blue-600 text-white'}`}>
+                                {permission === 'granted' ? 'Ativado' : 'Ativar'}
+                             </button>
+                         </div>
+                         
+                         <div>
+                             <h3 className={`text-xs font-bold ${colors.subtext} uppercase mb-3 tracking-wider`}>Atualizações Recentes</h3>
+                             <div className="space-y-3">
+                                {recentApps.map(app => (
+                                     <div key={app.id} className={`flex gap-3 p-3 rounded-xl ${colors.input} border ${colors.border}`}>
+                                         <img src={app.icon} className="w-10 h-10 rounded-[10px] bg-zinc-800 object-cover shadow-sm" />
+                                         <div>
+                                             <p className={`text-sm font-bold ${colors.text}`}>{app.name}</p>
+                                             <p className={`text-[10px] ${colors.subtext}`}>{app.scheduledAt && app.scheduledAt > Date.now() ? 'Em Breve' : 'Disponível Agora'}</p>
+                                         </div>
+                                     </div>
+                                ))}
+                             </div>
+                         </div>
+                     </div>
+                </div>
+            );
+        }
+
+        function ScheduledView({ apps, highlights, onClose, onEditApp, onEditHigh }) {
+            const now = Date.now();
+            const schedApps = apps.filter(a => a.scheduledAt && a.scheduledAt > now).sort((a, b) => a.scheduledAt - b.scheduledAt);
+            const schedHighs = highlights.filter(h => (h.scheduledAt && h.scheduledAt > now) || (h.reactivatedAt && h.reactivatedAt > now) || h.isHidden || (h.recurringDays && h.recurringDays.length > 0)).sort((a, b) => (a.scheduledAt || a.createdAt) - (b.scheduledAt || b.createdAt));
+
+            return (
+                <div className="fixed inset-0 z-[120] bg-black text-white animate-slide-up flex flex-col overflow-y-auto">
+                    <header className="h-14 flex items-center justify-between px-4 sticky top-0 bg-black/80 backdrop-blur-xl border-b border-zinc-800 z-30">
+                        <button onClick={onClose} className="text-blue-500 font-bold flex items-center gap-1 text-sm"><Icon name="ChevronLeft" size={20} /> Voltar</button>
+                        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Cronograma</h2>
+                        <div className="w-10"></div>
+                    </header>
+                    <div className="p-6 space-y-10 pb-20 max-w-4xl mx-auto w-full">
+                        <section>
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Icon name="Clock" className="text-blue-500" size={18} /> Destaques & Stories</h3>
+                            <div className="space-y-3">
+                                {schedHighs.length === 0 ? <p className="text-xs text-zinc-600 italic">Nada programado.</p> : schedHighs.map(h => (
+                                    <div key={h.id} onClick={() => onEditHigh(h)} className="flex items-center gap-4 p-3 rounded-2xl bg-zinc-900 border border-zinc-800 active:scale-98 transition-transform">
+                                        <img src={h.image || h.items?.[0]?.image} className="w-10 h-14 rounded-lg object-cover bg-zinc-800" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm truncate text-white mb-1">{h.title || h.items?.[0]?.title}</p>
+                                            <div className="flex gap-2">
+                                                {h.isHidden && <span className="text-[9px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded uppercase font-bold">Oculto</span>}
+                                                <span className="text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded uppercase font-bold flex items-center gap-1"><Icon name="Calendar" size={8} /> {formatShortDate(h.scheduledAt || h.createdAt)}</span>
+                                            </div>
+                                        </div>
+                                        <Icon name="Settings" size={16} className="text-zinc-600" />
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                        <section>
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Icon name="Rocket" className="text-blue-500" size={18} /> Apps na Fila</h3>
+                            <div className="space-y-3">
+                                {schedApps.length === 0 ? <p className="text-xs text-zinc-600 italic">Nenhum app pendente.</p> : schedApps.map(app => (
+                                    <div key={app.id} onClick={() => onEditApp(app)} className="flex items-center gap-4 p-3 rounded-2xl bg-zinc-900 border border-zinc-800 active:scale-98 transition-transform">
+                                        <img src={app.icon} className="w-10 h-10 rounded-xl object-cover bg-zinc-800" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm truncate text-white mb-1">{app.name}</p>
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider">Lançamento: {formatShortDate(app.scheduledAt)}</span>
+                                                {app.isVisibleBeforeLaunch && <span className="text-[8px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded uppercase font-bold">Visível</span>}
+                                            </div>
+                                        </div>
+                                        <Icon name="Timer" size={16} className="text-zinc-600" />
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            );
+        }
+
+        function HighlightModal({ editingHighlight, apps, onClose }) {
+            const [form, setForm] = useState({ layout: 'standard', items: [{}, {}, {}] });
+            const [loading, setLoading] = useState(false);
+            const weekDays = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+            const [mosaicTab, setMosaicTab] = useState(0); // 0 = Top, 1 = Left, 2 = Right
+            
+            useEffect(() => { 
+                const base = { title: '', subtitle: '', image: '', videoUrl: '', appId: '', isTimed: false, createdAt: null, scheduledAt: '', removedAt: '', reactivatedAt: '', isHidden: false, recurringDays: [], layout: 'standard', items: [{}, {}, {}] };
+                if (editingHighlight) {
+                    const mergedItems = editingHighlight.items ? [...editingHighlight.items] : [{}, {}, {}];
+                    while(mergedItems.length < 3) mergedItems.push({});
+                    setForm({ ...base, ...editingHighlight, items: mergedItems, videoUrl: editingHighlight.videoUrl || '', scheduledAt: toLocalDatetimeString(editingHighlight.scheduledAt), removedAt: toLocalDatetimeString(editingHighlight.removedAt), reactivatedAt: toLocalDatetimeString(editingHighlight.reactivatedAt) }); 
+                } else setForm(base);
+            }, [editingHighlight]);
+            
+            const toggleDay = (i) => { const n = [...(form.recurringDays||[])]; if(n.includes(i)) setForm({...form, recurringDays: n.filter(d=>d!==i)}); else setForm({...form, recurringDays: [...n, i]}); };
+            
+            const updateItem = (index, field, val) => {
+                const newItems = [...form.items];
+                newItems[index] = { ...newItems[index], [field]: val };
+                setForm({...form, items: newItems});
+            };
+
+            const save = async () => {
+                if (form.layout === 'standard') {
+                     if (!form.title || !form.image) return alert("Título e Capa obrigatórios.");
+                } else {
+                    if (!form.items[0].image || !form.items[1].image || !form.items[2].image) return alert("Todas as 3 imagens do mosaico são obrigatórias.");
+                }
+                
+                setLoading(true);
+                const now = Date.now();
+                const data = { ...form, createdAt: form.isTimed && !form.createdAt ? now : (form.createdAt || now), scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).getTime() : null, removedAt: form.removedAt ? new Date(form.removedAt).getTime() : null, reactivatedAt: form.reactivatedAt ? new Date(form.reactivatedAt).getTime() : null };
+                try {
+                    const coll = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('highlights');
+                    if (editingHighlight?.id) await coll.doc(editingHighlight.id).update(data); else await coll.add(data);
+                    onClose();
+                } catch (e) { alert(e.message); } finally { setLoading(false); }
+            };
+
+            return (
+                <div className="fixed inset-0 z-[150] bg-black text-white animate-slide-up flex flex-col overflow-y-auto">
+                    <header className="flex justify-between items-center p-4 sticky top-0 bg-black/90 backdrop-blur-md border-b border-zinc-800 z-10"><h2 className="text-lg font-bold">Editar Story</h2><button onClick={onClose}><Icon name="X" size={24} /></button></header>
+                    <div className="p-6 space-y-6 max-w-xl mx-auto w-full pb-20">
+                        
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Estilo do Layout</label>
+                            <div className="flex gap-2">
+                                <button onClick={() => setForm({...form, layout: 'standard'})} className={`flex-1 py-3 rounded-xl border text-xs font-bold uppercase ${form.layout === 'standard' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>Clássico</button>
+                                <button onClick={() => setForm({...form, layout: 'mosaic'})} className={`flex-1 py-3 rounded-xl border text-xs font-bold uppercase ${form.layout === 'mosaic' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>Mosaico (3)</button>
+                            </div>
+                        </div>
+
+                        {form.layout === 'standard' ? (
+                            <>
+                                <InputField label="Título" value={form.title} onChange={v => setForm({...form, title: v})} />
+                                <InputField label="Subtítulo" value={form.subtitle} onChange={v => setForm({...form, subtitle: v})} />
+                                <InputField label="Imagem URL" value={form.image} onChange={v => setForm({...form, image: v})} />
+                                <InputField label="Vídeo URL (Opcional)" value={form.videoUrl} onChange={v => setForm({...form, videoUrl: v})} />
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Vincular App</label>
+                                    <select className="w-full bg-zinc-900 text-white rounded-xl p-3 text-sm font-medium border border-zinc-800 outline-none" value={form.appId} onChange={e => setForm({...form, appId: e.target.value})}>
+                                        <option value="">Nenhum</option>
+                                        {apps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                    </select>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="bg-zinc-900/50 p-4 rounded-3xl border border-zinc-800">
+                                <div className="flex mb-6 bg-zinc-900 rounded-xl p-1">
+                                    {['Topo (Grande)', 'Inf. Esq.', 'Inf. Dir.'].map((label, idx) => (
+                                        <button key={idx} onClick={() => setMosaicTab(idx)} className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${mosaicTab === idx ? 'bg-zinc-700 text-white shadow' : 'text-zinc-500'}`}>{label}</button>
+                                    ))}
+                                </div>
+                                <div className="space-y-4 animate-fade-in">
+                                    <InputField label={`Título (${mosaicTab === 0 ? 'Topo' : mosaicTab === 1 ? 'Esq' : 'Dir'})`} value={form.items[mosaicTab].title || ''} onChange={v => updateItem(mosaicTab, 'title', v)} />
+                                    <InputField label="Subtítulo" value={form.items[mosaicTab].subtitle || ''} onChange={v => updateItem(mosaicTab, 'subtitle', v)} />
+                                    <InputField label="Imagem URL" value={form.items[mosaicTab].image || ''} onChange={v => updateItem(mosaicTab, 'image', v)} />
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Vincular App</label>
+                                        <select className="w-full bg-zinc-900 text-white rounded-xl p-3 text-sm font-medium border border-zinc-800 outline-none" value={form.items[mosaicTab].appId || ''} onChange={e => updateItem(mosaicTab, 'appId', e.target.value)}>
+                                            <option value="">Nenhum</option>
+                                            {apps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        <div className="bg-zinc-900 p-4 rounded-2xl flex justify-between items-center border border-zinc-800">
+                            <span className="text-sm font-bold text-red-400">Ocultar Manualmente</span>
+                            <input type="checkbox" checked={form.isHidden} onChange={e => setForm({...form, isHidden: e.target.checked})} className="toggle-checkbox w-5 h-5 rounded accent-red-500" />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-zinc-500 uppercase">Recorrência Semanal</label>
+                            <div className="flex gap-2">{weekDays.map((d, i) => <button key={i} onClick={() => toggleDay(i)} className={`w-8 h-8 rounded-full text-xs font-bold ${form.recurringDays?.includes(i) ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{d}</button>)}</div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                            <InputField label="Início (Data/Hora)" type="datetime-local" value={form.scheduledAt} onChange={v => setForm({...form, scheduledAt: v})} />
+                            <InputField label="Fim (Data/Hora)" type="datetime-local" value={form.removedAt} onChange={v => setForm({...form, removedAt: v})} />
+                        </div>
+
+                        <div className="flex gap-4 pt-4">
+                            {editingHighlight && <button onClick={() => { if(confirm('Deletar?')) db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('highlights').doc(editingHighlight.id).delete().then(onClose)}} className="p-4 bg-red-500/10 text-red-500 rounded-xl"><Icon name="Trash2" /></button>}
+                            <button onClick={save} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl">{loading ? 'Salvando...' : 'Salvar'}</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function AdminAppModal({ editingApp, onClose }) {
+            const [form, setForm] = useState({});
+            const [loading, setLoading] = useState(false);
+            
+            useEffect(() => {
+                const base = { name: '', developer: '', version: '', icon: '', category: 'Apps', screenshots: [], downloadUrl: '', uploadDate: '', updateDate: '', description: '', rating: '4+', updateNews: '', isMod: false, scheduledAt: '', isVisibleBeforeLaunch: false, hasWarning: false, warningMessage: '', platform: 'Mobile', isLocked: false, unlockSurpriseAt: '' };
+                if (editingApp) {
+                    setForm({ 
+                        ...base, 
+                        ...editingApp, 
+                        screenshots: editingApp.screenshots || [], 
+                        scheduledAt: toLocalDatetimeString(editingApp.scheduledAt), 
+                        unlockSurpriseAt: toLocalDatetimeString(editingApp.unlockSurpriseAt) 
+                    });
+                } else {
+                    setForm(base);
+                }
+            }, [editingApp]);
+
+            const handleFile = (e, field) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setForm(prev => ({...prev, [field]: reader.result}));
+                    reader.readAsDataURL(file);
+                }
+            };
+            
+             const handleScreenshots = (e) => {
+                const files = Array.from(e.target.files);
+                Promise.all(files.map(file => new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(file);
+                }))).then(results => {
+                     setForm(prev => ({...prev, screenshots: [...(prev.screenshots || []), ...results]}));
+                });
+            };
+            
+            const save = async () => {
+                if (!form.name || !form.icon) return alert("Título e Ícone obrigatórios.");
+                setLoading(true);
+                const payload = { ...form, screenshots: form.screenshots, scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).getTime() : null, unlockSurpriseAt: form.unlockSurpriseAt ? new Date(form.unlockSurpriseAt).getTime() : null };
+                delete payload.id;
+                try {
+                    const coll = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('apps');
+                    if (editingApp?.id) await coll.doc(editingApp.id).update(payload); else await coll.add(payload);
+                    onClose();
+                } catch (e) { alert(e.message); } finally { setLoading(false); }
+            };
+
+            return (
+                <div className="fixed inset-0 z-[150] bg-black text-white animate-slide-up flex flex-col overflow-y-auto">
+                    <header className="flex justify-between items-center p-4 sticky top-0 bg-black/90 backdrop-blur-md border-b border-zinc-800 z-10"><h2 className="text-lg font-bold">Editar App</h2><button onClick={onClose}><Icon name="X" size={24} /></button></header>
+                    <div className="p-6 space-y-5 max-w-xl mx-auto w-full pb-20">
+                        <InputField label="Nome" value={form.name} onChange={v => setForm({...form, name: v})} />
+                        <InputField label="Desenvolvedor" value={form.developer} onChange={v => setForm({...form, developer: v})} />
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 flex items-center justify-between">
+                                <span className="text-xs font-bold">MOD?</span>
+                                <input type="checkbox" checked={form.isMod} onChange={e => setForm({...form, isMod: e.target.checked})} className="w-4 h-4" />
+                            </div>
+                            <InputField label="Agendar" type="datetime-local" value={form.scheduledAt} onChange={v => setForm({...form, scheduledAt: v})} />
+                        </div>
+
+                        <div className="space-y-1"><label className="text-[10px] font-bold text-zinc-500 uppercase ml-1">Plataforma</label>
+                            <div className="flex gap-2">
+                                <button onClick={() => setForm({...form, platform: 'Mobile'})} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${form.platform === 'Mobile' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>Mobile</button>
+                                <button onClick={() => setForm({...form, platform: 'PC'})} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${form.platform === 'PC' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>PC</button>
+                            </div>
+                        </div>
+
+                        <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center justify-between">
+                            <div><p className="text-sm font-bold text-blue-400">Exibir na Loja (Pré-venda)</p><p className="text-[10px] text-zinc-500">Mostra como "Em Breve" antes da data.</p></div>
+                            <input type="checkbox" checked={form.isVisibleBeforeLaunch} onChange={e => setForm({...form, isVisibleBeforeLaunch: e.target.checked})} className="w-5 h-5 accent-blue-500" />
+                        </div>
+
+                        <div className="bg-zinc-900 p-4 rounded-2xl border border-purple-500/30 flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                                <div><p className="text-sm font-bold text-purple-400 flex gap-2"><Icon name="Lock" size={14} /> Modo Surpresa</p><p className="text-[10px] text-zinc-500">Esconde detalhes até a data.</p></div>
+                                <input type="checkbox" checked={form.isLocked} onChange={e => setForm({...form, isLocked: e.target.checked})} className="w-5 h-5 accent-purple-500" />
+                            </div>
+                            {form.isLocked && <InputField label="Data Revelação (Opcional)" type="datetime-local" value={form.unlockSurpriseAt} onChange={v => setForm({...form, unlockSurpriseAt: v})} />}
+                        </div>
+
+                        <div className="bg-zinc-900 p-4 rounded-2xl border border-yellow-500/20 space-y-2">
+                            <div className="flex justify-between items-center"><span className="text-sm font-bold text-yellow-500">Aviso Prévio</span><input type="checkbox" checked={form.hasWarning} onChange={e => setForm({...form, hasWarning: e.target.checked})} className="w-4 h-4 accent-yellow-500" /></div>
+                            {form.hasWarning && <textarea className="w-full bg-black/50 p-2 rounded-lg text-xs text-white border border-zinc-700 outline-none" rows="3" value={form.warningMessage} onChange={e => setForm({...form, warningMessage: e.target.value})} placeholder="Mensagem de alerta..." />}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <InputField label="Versão" value={form.version} onChange={v => setForm({...form, version: v})} />
+                            <div className="space-y-1"><label className="text-[10px] font-bold text-zinc-500 uppercase ml-1">Categoria</label>
+                                <select className="w-full bg-zinc-900 text-white rounded-xl p-3 text-sm font-medium border border-zinc-800 outline-none" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                                    {['Apps', 'Jogos', 'PC', 'Streaming', 'Utilitários', 'Rede Sociais'].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div>
+                             <InputField label="Ícone URL" value={form.icon} onChange={v => setForm({...form, icon: v})} />
+                             <div className="file-input-wrapper w-full bg-zinc-800 text-center py-2 rounded-lg text-xs font-bold text-zinc-400 mb-4 cursor-pointer hover:bg-zinc-700 transition">
+                                 OU Carregar Ícone do Dispositivo
+                                 <input type="file" accept="image/*" onChange={(e) => handleFile(e, 'icon')} />
+                             </div>
+                        </div>
+
+                        <InputField label="Download URL" value={form.downloadUrl} onChange={v => setForm({...form, downloadUrl: v})} />
+                        
+                        <div>
+                            <InputField label="Screenshots URLs (sep. vírgula)" value={(form.screenshots || []).join(', ')} onChange={v => setForm({...form, screenshots: v.split(',').map(s => s.trim())})} />
+                             <div className="file-input-wrapper w-full bg-zinc-800 text-center py-2 rounded-lg text-xs font-bold text-zinc-400 mb-4 cursor-pointer hover:bg-zinc-700 transition">
+                                 OU Carregar Screenshots do Dispositivo
+                                 <input type="file" accept="image/*" multiple onChange={handleScreenshots} />
+                             </div>
+                        </div>
+
+                        <div className="space-y-1"><label className="text-[10px] font-bold text-zinc-500 uppercase ml-1">Descrição</label><textarea className="w-full bg-zinc-900 text-white rounded-xl p-3 text-sm border border-zinc-800 outline-none" rows="4" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
+
+                        <div className="flex gap-4 pt-4">
+                            {editingApp && <button onClick={() => { if(confirm('Deletar?')) db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('apps').doc(editingApp.id).delete().then(onClose)}} className="p-4 bg-red-500/10 text-red-500 rounded-xl"><Icon name="Trash2" /></button>}
+                            <button onClick={save} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl">{loading ? 'Salvando...' : 'Salvar App'}</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- App Details Modal Definition (Placed before usage) ---
+
+        function AppDetail({ app, onClose, themeMode }) {
+            const now = Date.now();
+            const colors = THEMES[themeMode] || THEMES.amoled;
+            const isPreOrder = app.scheduledAt && now < app.scheduledAt;
+            const [showWarning, setShowWarning] = useState(!!app.hasWarning);
+            const isEffectiveLocked = app.isLocked && (!app.unlockSurpriseAt && (!app.scheduledAt || now < app.scheduledAt));
+
+            // CORREÇÃO: Download nos detalhes
+            const handleDownload = () => { 
+                if (isPreOrder) return;
+                openSystemLink(app.downloadUrl);
+            };
+            
+            const handleShare = async () => {
+                const shareData = {
+                    title: app.name,
+                    text: `Confira ${app.name} na Nexus Store!`,
+                    url: app.downloadUrl || window.location.href
+                };
+
+                if (navigator.share) {
+                    try { await navigator.share(shareData); } catch (err) { console.log('Error sharing:', err); }
+                } else {
+                    const shareText = `Baixe ${app.name} na Nexus Store! ${app.downloadUrl || ''}`;
+                    const textArea = document.createElement("textarea");
+                    textArea.value = shareText;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try { document.execCommand('copy'); alert('Link copiado!'); } catch (err) {}
+                    document.body.removeChild(textArea);
+                }
+            };
+
+            const displayApp = isEffectiveLocked ? { ...app, name: "???", developer: "???", description: "Conteúdo confidencial. Aguarde a revelação.", icon: null } : app;
+
+            return (
+                <div className={`fixed inset-0 z-50 ${colors.bg} ${colors.text} animate-slide-up flex flex-col overflow-y-auto`}>
+                    {showWarning && (
+                        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-md flex items-center justify-center p-8 animate-fade-in">
+                            <div className={`${colors.card} p-6 rounded-3xl w-full max-w-sm shadow-2xl text-center border ${colors.border}`}>
+                                <div className="w-12 h-12 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><Icon name="AlertTriangle" className="text-yellow-500" size={24} /></div>
+                                <h3 className="font-bold text-lg mb-2">Atenção</h3>
+                                <p className={`${colors.subtext} text-sm mb-6 leading-relaxed`}>{app.warningMessage}</p>
+                                <button onClick={() => setShowWarning(false)} className={`w-full py-3 ${themeMode === 'light' ? 'bg-black text-white' : 'bg-white text-black'} font-bold rounded-xl text-sm`}>Entendido</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className={`sticky top-0 z-30 flex justify-between items-center p-4 ${colors.glass} backdrop-blur-xl`}>
+                        <button onClick={onClose} className="w-9 h-9 rounded-full bg-zinc-800/50 flex items-center justify-center text-blue-500 backdrop-blur-md"><Icon name="ChevronLeft" size={22} /></button>
+                    </div>
+
+                    <div className="px-5 pb-40 animate-scale-in">
+                        <div className="flex gap-5 mb-8">
+                            <div className={`w-28 h-28 shrink-0 rounded-[22%] shadow-2xl overflow-hidden ${isEffectiveLocked ? `${colors.card} flex items-center justify-center` : ''}`}>
+                                {isEffectiveLocked ? <span className={`text-4xl font-black ${colors.subtext}`}>?</span> : <img src={displayApp.icon} className="w-full h-full object-cover" />}
+                            </div>
+                            <div className="flex flex-col justify-center min-w-0">
+                                <h1 className="text-xl font-bold leading-tight mb-1">{displayApp.name}</h1>
+                                <p className={`${colors.subtext} text-xs font-medium mb-4 uppercase tracking-wide`}>{displayApp.developer}</p>
+                                <div className="flex items-center gap-3">
+                                    <button onClick={handleDownload} disabled={isPreOrder} className={`px-6 py-2 rounded-full font-bold text-xs uppercase tracking-wider transition-transform active:scale-95 flex items-center gap-2 ${isPreOrder ? 'bg-zinc-800 text-zinc-500' : 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'}`}>
+                                        <Icon name="Download" size={14} />
+                                        {isPreOrder ? 'EM BREVE' : 'OBTER'}
+                                    </button>
+                                    <button onClick={handleShare} className={`w-9 h-9 rounded-full ${colors.input} flex items-center justify-center text-blue-500 active:scale-90 transition-transform`}><Icon name="Share" size={18} /></button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={`flex justify-between border-b ${colors.border} pb-6 mb-6 overflow-x-auto`}>
+                            <div className={`px-4 text-center border-r ${colors.border} last:border-0 flex-1`}>
+                                <p className={`text-[10px] ${colors.subtext} font-bold uppercase mb-1`}>Classificação</p>
+                                <p className={`text-xl font-bold ${themeMode === 'light' ? 'text-black' : 'text-zinc-300'}`}>{displayApp.rating}</p>
+                                <p className={`text-[9px] ${colors.subtext}`}>Anos</p>
+                            </div>
+                            <div className={`px-4 text-center border-r ${colors.border} last:border-0 flex-1`}>
+                                <p className={`text-[10px] ${colors.subtext} font-bold uppercase mb-1`}>Categoria</p>
+                                <Icon name="Grid" size={20} className={`mx-auto ${colors.subtext} mb-0.5`} />
+                                <p className={`text-[9px] ${colors.subtext}`}>{displayApp.category}</p>
+                            </div>
+                            <div className="px-4 text-center flex-1">
+                                <p className={`text-[10px] ${colors.subtext} font-bold uppercase mb-1`}>Plataforma</p>
+                                <p className={`text-sm font-bold ${colors.subtext} mt-1`}>{displayApp.platform || 'Mobile'}</p>
+                            </div>
+                        </div>
+
+                        <div className="mb-8">
+                            <h2 className="text-lg font-bold mb-3">Novidades</h2>
+                            <div className={`flex justify-between ${colors.subtext} text-xs font-medium mb-3`}><span>Versão {displayApp.version}</span><span>{formatShortDate(now)}</span></div>
+                            <p className={`${colors.subtext} text-sm leading-relaxed opacity-90`}>{displayApp.updateNews || 'Melhorias de desempenho e correções de bugs.'}</p>
+                        </div>
+
+                        <div className="mb-8">
+                            <h2 className="text-lg font-bold mb-4">Pré-visualização</h2>
+                            <div className="flex gap-4 overflow-x-auto no-scrollbar snap-x -mx-5 px-5">
+                                {displayApp.screenshots?.map((s, i) => <img key={i} src={s} className={`h-[400px] w-auto rounded-[32px] snap-center shadow-lg ${colors.input} object-cover`} />)}
+                            </div>
+                        </div>
+
+                        <div className={`border-t ${colors.border} pt-6`}>
+                            <p className={`${colors.subtext} text-sm leading-relaxed whitespace-pre-wrap opacity-90`}>{displayApp.description}</p>
+                        </div>
+                        
+                        <div className={`mt-10 pt-10 border-t ${colors.border} mb-10`}>
+                            <div className="flex justify-between py-2 text-xs">
+                                <span className={colors.subtext}>Desenvolvedor</span>
+                                <span className={colors.text}>{displayApp.developer}</span>
+                            </div>
+                            <div className="flex justify-between py-2 text-xs">
+                                <span className={colors.subtext}>Categoria</span>
+                                <span className={colors.text}>{displayApp.category}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Profile Modal Definition ---
+        function ProfileModal({ isAdmin, setAdmin, highlights, onAddHigh, onEditHigh, onClose, profileImage, onImageUpload, theme, setTheme }) {
+            const [userLogin, setUserLogin] = useState('');
+            const [passLogin, setPassLogin] = useState('');
+            const [showAdminLogin, setShowAdminLogin] = useState(false);
+            const [isMaintenance, setIsMaintenance] = useState(false);
+            const [activeTab, setActiveTab] = useState('general');
+            const [deleteConfirmation, setDeleteConfirmation] = useState(null);
+            const [appUpdateConfig, setAppUpdateConfig] = useState({ latestVersion: APP_VERSION, apkUrl: '' });
+            const [showUpdateConfig, setShowUpdateConfig] = useState(false);
+            const [devClicks, setDevClicks] = useState(0); 
+            
+            // Account Edit State
+            const [editUser, setEditUser] = useState(localStorage.getItem('nexus_username') || '');
+            const [editPass, setEditPass] = useState('');
+            const [isSavingAccount, setIsSavingAccount] = useState(false);
+
+            const fileInputRef = useRef(null);
+            const colors = THEMES[theme] || THEMES.amoled;
+            const currentUsername = localStorage.getItem('nexus_username');
+
+            useEffect(() => {
+                const configRef = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('config');
+                configRef.get().then(doc => { 
+                    if (doc.exists) {
+                        const data = doc.data();
+                        setIsMaintenance(data.maintenance || false);
+                        setAppUpdateConfig({ 
+                            latestVersion: data.latestVersion || APP_VERSION, 
+                            apkUrl: data.apkUrl || '' 
+                        });
+                    }
+                });
+            }, []);
+            
+            useEffect(() => {
+                if(!isAdmin && currentUsername) {
+                   db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('accounts').collection('users').doc(currentUsername).get().then(doc => {
+                       if(doc.exists) setEditPass(doc.data().password);
+                   });
+                }
+            }, [isAdmin, currentUsername]);
+
+            const handleDevClick = () => {
+                const newCount = devClicks + 1;
+                setDevClicks(newCount);
+                if (newCount === 7) {
+                    setShowAdminLogin(true);
+                    alert("Modo Desenvolvedor: Login Admin Liberado");
+                }
+            };
+
+            const toggleMaintenance = async () => {
+                const newState = !isMaintenance;
+                setIsMaintenance(newState);
+                await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('config').set({ maintenance: newState }, { merge: true });
+            };
+
+            const saveUpdateConfig = async () => {
+                await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('config').set(appUpdateConfig, { merge: true });
+                setShowUpdateConfig(false);
+            };
+
+            const confirmDelete = (id) => {
+                setDeleteConfirmation(id);
+            };
+
+            const executeDelete = async () => {
+                if (deleteConfirmation) {
+                    await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('data').collection('highlights').doc(deleteConfirmation).delete();
+                    setDeleteConfirmation(null);
+                }
+            };
+            
+            const handleAccountUpdate = async () => {
+                if(!editUser || !editPass) return alert("Preencha todos os campos.");
+                if(isAdmin) return alert("Conta Admin não pode ser alterada pelo app.");
+                
+                setIsSavingAccount(true);
+                const userRef = db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('accounts').collection('users');
+                
+                try {
+                    if (editUser === currentUsername) {
+                        await userRef.doc(currentUsername).update({ password: editPass });
+                        alert("Senha atualizada!");
+                    } else {
+                        const newDoc = await userRef.doc(editUser).get();
+                        if(newDoc.exists) {
+                             alert("Este nome de usuário já está em uso.");
+                             setIsSavingAccount(false);
+                             return;
+                        }
+                        const oldData = (await userRef.doc(currentUsername).get()).data();
+                        await userRef.doc(editUser).set({ ...oldData, password: editPass });
+                        await userRef.doc(currentUsername).delete();
+                        localStorage.setItem('nexus_username', editUser);
+                        alert("Usuário atualizado! Faça login novamente.");
+                        location.reload(); 
+                    }
+                } catch(e) {
+                    alert("Erro ao atualizar.");
+                    console.error(e);
+                } finally {
+                    setIsSavingAccount(false);
+                }
+            };
+
+            const handleLogin = () => {
+                if (userLogin === 'DN' && passLogin === 'dnvy2205ZX@') {
+                    setAdmin(true);
+                    setShowAdminLogin(false);
+                } else {
+                    alert("Usuário ou Senha incorretos");
+                }
+            };
+
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                         const imgData = reader.result;
+                         onImageUpload(imgData);
+                         if(!isAdmin && currentUsername) {
+                             await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('accounts').collection('users').doc(currentUsername).update({ image: imgData });
+                         }
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const isUpdateAvailable = appUpdateConfig.latestVersion !== APP_VERSION;
+
+            return (
+                <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in">
+                    <div className={`${colors.card} w-full max-w-sm rounded-[32px] p-6 shadow-2xl relative overflow-hidden border ${colors.border} flex flex-col max-h-[85vh]`}>
+                        <header className="flex justify-between items-center mb-6 shrink-0">
+                            <h2 className={`text-xl font-bold ${colors.text}`}>Conta</h2>
+                            <button onClick={onClose} className={`w-8 h-8 rounded-full flex items-center justify-center text-blue-500 font-bold ${colors.input}`}><Icon name="X" size={18} /></button>
+                        </header>
+                        
+                        <div className="flex flex-col items-center mb-6 shrink-0">
+                            <div onClick={() => fileInputRef.current?.click()} className={`w-20 h-20 rounded-full ${colors.input} border-4 ${colors.card} shadow-xl overflow-hidden relative group cursor-pointer`}>
+                                {profileImage ? <img src={profileImage} className="w-full h-full object-cover" /> : <Icon name="Camera" size={28} className={`text-zinc-500 m-auto mt-6`} />}
+                            </div>
+                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+                            <p className={`text-lg font-bold mt-3 ${colors.text}`}>{isAdmin ? 'Nexus Admin' : (currentUsername || 'Nexus Membro')}</p>
+                            
+                            {/* Secret Click Trigger on 'Usuário Padrão' */}
+                            <p onClick={!isAdmin ? handleDevClick : undefined} className={`text-xs font-medium ${colors.subtext} select-none active:text-blue-500 transition-colors cursor-pointer`}>{isAdmin ? 'Acesso Total' : 'Usuário Padrão'}</p>
+                        </div>
+
+                        {/* Update Status Block */}
+                        <div className={`p-4 rounded-2xl mb-6 flex items-center justify-between border ${isUpdateAvailable ? 'bg-blue-500/10 border-blue-500/30' : `${colors.input} ${colors.border}`}`}>
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isUpdateAvailable ? 'bg-blue-500 text-white' : 'bg-green-500/20 text-green-500'}`}>
+                                    <Icon name={isUpdateAvailable ? "Download" : "Check"} size={20} />
+                                </div>
+                                <div>
+                                    <p className={`text-xs font-bold ${colors.text}`}>{isUpdateAvailable ? `Nova Versão ${appUpdateConfig.latestVersion}` : 'Tudo Atualizado'}</p>
+                                    <p className={`text-[10px] ${colors.subtext}`}>Versão atual: {APP_VERSION}</p>
+                                </div>
+                            </div>
+                            {isUpdateAvailable && (
+                                <button onClick={() => window.open(appUpdateConfig.apkUrl, '_blank')} className="bg-blue-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg hover:scale-105 transition-transform">
+                                    Baixar
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Tab Switcher */}
+                         <div className={`p-1 ${colors.input} rounded-xl mb-4 flex gap-1 shrink-0`}>
+                            <button onClick={() => setActiveTab('general')} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === 'general' ? (theme==='light' ? 'bg-white text-black shadow-sm' : 'bg-zinc-700 text-white shadow-sm') : colors.subtext}`}>Geral</button>
+                            {!isAdmin && <button onClick={() => setActiveTab('security')} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === 'security' ? (theme==='light' ? 'bg-white text-black shadow-sm' : 'bg-zinc-700 text-white shadow-sm') : colors.subtext}`}>Segurança</button>}
+                            {isAdmin && <button onClick={() => setActiveTab('highlights')} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === 'highlights' ? (theme==='light' ? 'bg-white text-black shadow-sm' : 'bg-zinc-700 text-white shadow-sm') : colors.subtext}`}>Destaques</button>}
+                        </div>
+
+                        <div className="overflow-y-auto no-scrollbar flex-1">
+                            {activeTab === 'general' && (
+                                <>
+                                    <div className={`p-1 ${colors.input} rounded-xl mb-6 flex gap-1`}>
+                                        {['amoled', 'matte', 'light'].map(t => (
+                                            <button key={t} onClick={() => setTheme(t)} className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${theme === t ? (t==='light' ? 'bg-white text-black shadow-sm' : 'bg-zinc-800 text-white shadow-sm') : colors.subtext}`}>
+                                                {t}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {!isAdmin ? (
+                                        <div className={`border-t ${colors.border} pt-6`}>
+                                            
+                                            {/* Secret Admin Login Section - Only visible after secret clicks */}
+                                            {showAdminLogin && (
+                                                <div className="flex flex-col gap-2 animate-scale-in mb-4">
+                                                    <div className="text-center text-[10px] text-blue-500 font-bold uppercase tracking-widest mb-1">Acesso Secreto Admin</div>
+                                                    <input type="text" placeholder="Usuário" className={`w-full ${colors.input} rounded-xl px-4 py-3 text-sm ${colors.text} outline-none border border-transparent focus:border-blue-500`} value={userLogin} onChange={e => setUserLogin(e.target.value)} />
+                                                    <div className="flex gap-2">
+                                                        <input type="password" placeholder="Senha" className={`flex-1 ${colors.input} rounded-xl px-4 py-3 text-sm ${colors.text} outline-none border border-transparent focus:border-blue-500`} value={passLogin} onChange={e => setPassLogin(e.target.value)} />
+                                                        <button type="button" onClick={handleLogin} className="bg-blue-600 px-4 rounded-xl text-white"><Icon name="ArrowRight" /></button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            <button onClick={() => { localStorage.removeItem('nexus_logged_in'); location.reload(); }} className="w-full mt-2 py-4 text-red-500 text-sm font-bold bg-red-500/10 rounded-xl">Sair da Conta</button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3 animate-scale-in">
+                                            <button onClick={onAddHigh} className="w-full py-4 bg-blue-600 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"><Icon name="PlusCircle" size={18} /> Novo Story</button>
+                                            
+                                            <button type="button" onClick={(e) => { e.preventDefault(); setShowUpdateConfig(prev => !prev); }} className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${colors.input} ${colors.subtext}`}>
+                                                <Icon name="Smartphone" size={18} /> Gerenciar Atualização
+                                            </button>
+                                            
+                                            {showUpdateConfig && (
+                                                <div className={`p-4 rounded-xl ${colors.input} border ${colors.border} animate-fade-in space-y-3`}>
+                                                    <InputField label="Versão Mais Recente" value={appUpdateConfig.latestVersion} onChange={v => setAppUpdateConfig({...appUpdateConfig, latestVersion: v})} themeMode={theme} />
+                                                    <InputField label="Link do APK" value={appUpdateConfig.apkUrl} onChange={v => setAppUpdateConfig({...appUpdateConfig, apkUrl: v})} themeMode={theme} />
+                                                    <button onClick={saveUpdateConfig} className="w-full py-2 bg-green-600 text-white rounded-lg font-bold text-xs">Salvar Config</button>
+                                                </div>
+                                            )}
+
+                                            <button onClick={toggleMaintenance} className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${isMaintenance ? 'bg-red-500/20 text-red-500' : `${colors.input} ${colors.subtext}`}`}>
+                                                <Icon name={isMaintenance ? "AlertTriangle" : "CheckCircle"} size={18} /> {isMaintenance ? 'Manutenção Ativa' : 'Manutenção Inativa'}
+                                            </button>
+                                            <button onClick={() => setAdmin(false)} className="w-full py-4 text-red-500 text-sm font-bold">Sair do Admin</button>
+                                        </div>
+                                    )}
+                                    
+                                    <div className="mt-8 text-center pb-4">
+                                        <button onClick={() => window.open('https://t.me/+x9-z426ffR1hMGEx', '_blank')} className="text-blue-500 text-xs font-bold flex items-center justify-center gap-1"><Icon name="Send" size={12} /> Telegram Oficial</button>
+                                    </div>
+                                </>
+                            )}
+                            
+                            {activeTab === 'security' && !isAdmin && (
+                                <div className="space-y-4 animate-scale-in">
+                                    <div className="bg-yellow-500/10 p-4 rounded-2xl border border-yellow-500/20 mb-4">
+                                        <p className="text-xs text-yellow-500 font-bold flex items-center gap-2 mb-1"><Icon name="AlertTriangle" size={14} /> Atenção</p>
+                                        <p className={`text-[10px] ${colors.subtext}`}>Ao alterar o nome de usuário, você precisará fazer login novamente.</p>
+                                    </div>
+                                    <InputField label="Nome de Usuário" value={editUser} onChange={setEditUser} themeMode={theme} />
+                                    <InputField label="Senha" type="text" value={editPass} onChange={setEditPass} themeMode={theme} />
+                                    <button onClick={handleAccountUpdate} disabled={isSavingAccount} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-900/20">{isSavingAccount ? 'Salvando...' : 'Salvar Alterações'}</button>
+                                </div>
+                            )}
+
+                            {activeTab === 'highlights' && isAdmin && (
+                                <div className="space-y-3 pb-4">
+                                    {highlights.length === 0 ? <p className={`text-center text-xs ${colors.subtext} py-4`}>Nenhum destaque ativo.</p> : 
+                                        highlights.map(h => (
+                                            <div key={h.id} className={`flex items-center gap-3 p-3 rounded-xl ${colors.input} border ${colors.border} relative overflow-hidden`}>
+                                                {deleteConfirmation === h.id ? (
+                                                    <div className="absolute inset-0 bg-red-900/90 flex items-center justify-between px-4 z-10">
+                                                        <span className="text-white text-xs font-bold">Apagar?</span>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={executeDelete} className="bg-white text-red-600 px-2 py-1 rounded text-[10px] font-bold">Sim</button>
+                                                            <button onClick={() => setDeleteConfirmation(null)} className="bg-black/20 text-white px-2 py-1 rounded text-[10px] font-bold">Não</button>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                                <img src={h.image || (h.items && h.items[0] ? h.items[0].image : '')} className="w-10 h-14 rounded-lg object-cover bg-black" />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-xs font-bold ${colors.text} truncate`}>{h.title || (h.items && h.items[0] ? h.items[0].title : 'Sem Título')}</p>
+                                                    <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${h.type === 'mosaic' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>{h.type === 'mosaic' ? 'Mosaico' : 'Clássico'}</span>
+                                                </div>
+                                                <button onClick={() => confirmDelete(h.id)} className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 active:scale-90 transition-transform"><Icon name="Trash2" size={16} /></button>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            const [view, setView] = useState('loading');
+            const [user, setUser] = useState(null);
+            const [activeTab, setActiveTab] = useState('today');
+            const [theme, setTheme] = useState(() => localStorage.getItem('nexus_theme') || 'amoled');
+            const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('nexus_admin_status') === 'true');
+            const [apps, setApps] = useState([]);
+            const [highlights, setHighlights] = useState([]);
+            const [profileImage, setProfileImage] = useState(null);
+            const [selectedApp, setSelectedApp] = useState(null);
+            const [editingApp, setEditingApp] = useState(null);
+            const [editingHighlight, setEditingHighlight] = useState(null);
+            const [showAdminModal, setShowAdminModal] = useState(false);
+            const [showHighlightModal, setShowHighlightModal] = useState(false);
+            const [showProfile, setShowProfile] = useState(false);
+            const [showScheduled, setShowScheduled] = useState(false);
+            const [showNotifications, setShowNotifications] = useState(false);
+            const [isMaintenance, setIsMaintenance] = useState(false);
+            const [toast, setToast] = useState(null); 
+            
+            const prevAppsRef = useRef([]);
+            const isFirstLoad = useRef(true);
+
+            const colors = THEMES[theme] || THEMES.amoled;
+
+            useEffect(() => {
+                const handleToast = (e) => setToast(e.detail);
+                window.addEventListener('nexus-toast', handleToast);
+                return () => window.removeEventListener('nexus-toast', handleToast);
+            }, []);
+
+            const setAdminState = (status) => { 
+                setIsAdmin(status); 
+                if (status) localStorage.setItem('nexus_admin_status', 'true'); 
+                else localStorage.removeItem('nexus_admin_status'); 
+            };
+            
+            const handleSetTheme = (newTheme) => {
+                setTheme(newTheme);
+                localStorage.setItem('nexus_theme', newTheme);
+            };
+
+            const handleLogin = (isAdminUser, username, customImage) => {
+                localStorage.setItem('nexus_username', username);
+                if(isAdminUser) setAdminState(true);
+                localStorage.setItem('nexus_logged_in', 'true');
+                if(customImage) setProfileImage(customImage);
+                setView('store');
+            };
+
+            useEffect(() => {
+                setupPWA();
+                const unsub = auth.onAuthStateChanged(u => { 
+                    setUser(u); 
+                    if(localStorage.getItem('nexus_logged_in') === 'true') {
+                        const storedUser = localStorage.getItem('nexus_username');
+                        if (storedUser && storedUser !== 'DN') {
+                             db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('accounts').collection('users').doc(storedUser).get().then(doc => {
+                                 if(doc.exists && doc.data().image) setProfileImage(doc.data().image);
+                             });
+                        }
+                        setView('store');
+                    } else {
+                        setView('login');
+                    }
+                });
+                if (!auth.currentUser) auth.signInAnonymously();
+                return unsub;
+            }, []);
+
+            useEffect(() => {
+                if (!user) return;
+                const ref = db.collection('artifacts').doc(DB_APP_ID);
+                
+                const u1 = ref.collection('public').doc('data').collection('apps').onSnapshot(s => {
+                    const currentApps = s.docs.map(d => ({id: d.id, ...d.data()}));
+                    
+                    if (!isFirstLoad.current) {
+                        const prevIds = prevAppsRef.current.map(a => a.id);
+                        const newAdded = currentApps.filter(a => !prevIds.includes(a.id));
+                        
+                        newAdded.forEach(app => {
+                            const isPreOrder = app.scheduledAt && app.scheduledAt > Date.now();
+                            const title = isPreOrder ? `Em Breve: ${app.name}` : `Novo App: ${app.name}`;
+                            const body = isPreOrder ? "Confira o lançamento agendado na Nexus!" : "Já disponível para download. Toque para ver!";
+                            sendNotification(title, body, app.icon);
+                        });
+                    }
+                    
+                    prevAppsRef.current = currentApps;
+                    isFirstLoad.current = false;
+                    setApps(currentApps);
+                });
+
+                const u2 = ref.collection('public').doc('data').collection('highlights').onSnapshot(s => setHighlights(s.docs.map(d => ({id: d.id, ...d.data()}))));
+                const u3 = ref.collection('public').doc('config').onSnapshot(d => setIsMaintenance(d.exists ? d.data().maintenance : false));
+                
+                const u4 = ref.collection('users').doc(user.uid).collection('profile').doc('info').onSnapshot(d => {
+                     if(d.exists && isAdmin) setProfileImage(d.data().image);
+                });
+                
+                return () => { u1(); u2(); u3(); u4(); };
+            }, [user, isAdmin]);
+
+            const handleImageUpload = async (base64) => { 
+                setProfileImage(base64);
+                const currentUsername = localStorage.getItem('nexus_username');
+                if(!isAdmin && currentUsername) {
+                     await db.collection('artifacts').doc(DB_APP_ID).collection('public').doc('accounts').collection('users').doc(currentUsername).update({ image: base64 });
+                }
+                if (user) await db.collection('artifacts').doc(DB_APP_ID).collection('users').doc(user.uid).collection('profile').doc('info').set({ image: base64 }, { merge: true }); 
+            };
+
+            if (isMaintenance && !isAdmin) return <MaintenanceView onAdminLogin={setAdminState} />;
+            if (view === 'loading') return <div className="h-screen bg-black flex items-center justify-center"><div className="w-10 h-10 border-4 border-blue-600 rounded-full animate-spin border-t-transparent"></div></div>;
+            if (view === 'login') return <LoginView onLogin={handleLogin} />;
+
+            return (
+                <div className={`h-screen w-full ${colors.bg} overflow-hidden flex flex-col font-sans transition-colors duration-300`}>
+                    
+                    {toast && <Toast title={toast.title} body={toast.body} icon={toast.icon} themeMode={theme} onClose={() => setToast(null)} />}
+
+                    <div className="flex-1 overflow-y-auto pb-40 no-scrollbar">
+                        {activeTab === 'today' && <TodayView apps={apps} highlights={highlights} onProfile={() => setShowProfile(true)} onNotifications={() => setShowNotifications(true)} onApp={setSelectedApp} isAdmin={isAdmin} onEdit={(a) => { setEditingApp(a); setShowAdminModal(true); }} profileImage={profileImage} themeMode={theme} setShowScheduled={setShowScheduled} setEditingApp={setEditingApp} setShowAdminModal={setShowAdminModal} />}
+                        {activeTab === 'games' && <GenericTabView title="Jogos" apps={apps.filter(a => a.category === 'Jogos')} onApp={setSelectedApp} isAdmin={isAdmin} onEdit={(a) => { setEditingApp(a); setShowAdminModal(true); }} themeMode={theme} />}
+                        {activeTab === 'apps' && <GenericTabView title="Apps" apps={apps.filter(a => a.category !== 'Jogos' && a.category !== 'PC')} onApp={setSelectedApp} isAdmin={isAdmin} onEdit={(a) => { setEditingApp(a); setShowAdminModal(true); }} themeMode={theme} />}
+                        {activeTab === 'pc' && <GenericTabView title="PC" apps={apps.filter(a => a.category === 'PC')} onApp={setSelectedApp} isAdmin={isAdmin} onEdit={(a) => { setEditingApp(a); setShowAdminModal(true); }} themeMode={theme} />}
+                        {activeTab === 'search' && <SearchView apps={apps} onApp={setSelectedApp} onProfile={() => setShowProfile(true)} onNotifications={() => setShowNotifications(true)} profileImage={profileImage} themeMode={theme} />}
+                    </div>
+
+                    <nav className={`fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-[400px] px-6 py-4 rounded-[30px] flex justify-between items-center z-50 border shadow-dock backdrop-blur-xl ${colors.dock} ${colors.border} transition-colors duration-300`}>
+                        <TabButton active={activeTab === 'today'} icon="Calendar" label="Hoje" onClick={() => setActiveTab('today')} themeMode={theme} />
+                        <TabButton active={activeTab === 'games'} icon="Gamepad2" label="Jogos" onClick={() => setActiveTab('games')} themeMode={theme} />
+                        <TabButton active={activeTab === 'apps'} icon="AppWindow" label="Apps" onClick={() => setActiveTab('apps')} themeMode={theme} />
+                        <TabButton active={activeTab === 'pc'} icon="Monitor" label="PC" onClick={() => setActiveTab('pc')} themeMode={theme} />
+                        <TabButton active={activeTab === 'search'} icon="Search" label="Busca" onClick={() => setActiveTab('search')} themeMode={theme} />
+                    </nav>
+
+                    {isAdmin && activeTab === 'today' && (
+                        <div className="fixed bottom-32 right-5 flex flex-col gap-3 z-30">
+                            <button onClick={() => setShowScheduled(true)} className={`w-12 h-12 ${colors.input} backdrop-blur rounded-full flex items-center justify-center ${colors.text} shadow-lg border ${colors.border} active:scale-90 transition-transform`}><Icon name="Clock" size={20} /></button>
+                            <button onClick={() => { setEditingApp(null); setShowAdminModal(true); }} className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-blue-900/30 active:scale-90 transition-transform"><Icon name="Plus" size={24} /></button>
+                        </div>
+                    )}
+
+                    {selectedApp && <AppDetail app={selectedApp} onClose={() => setSelectedApp(null)} themeMode={theme} />}
+                    {showAdminModal && <AdminAppModal editingApp={editingApp} onClose={() => setShowAdminModal(false)} />}
+                    {showHighlightModal && <HighlightModal editingHighlight={editingHighlight} apps={apps} onClose={() => setShowHighlightModal(false)} />}
+                    {showScheduled && <ScheduledView apps={apps} highlights={highlights} onClose={() => setShowScheduled(false)} onEditApp={(a) => { setEditingApp(a); setShowAdminModal(true); }} onEditHigh={(h) => { setEditingHighlight(h); setShowHighlightModal(true); }} />}
+                    {showNotifications && <NotificationsModal apps={apps} onClose={() => setShowNotifications(false)} themeMode={theme} />}
+                    {showProfile && <ProfileModal isAdmin={isAdmin} setAdmin={setAdminState} highlights={highlights} onAddHigh={() => { setEditingHighlight(null); setShowHighlightModal(true); }} onEditHigh={(h) => { setEditingHighlight(h); setShowHighlightModal(true); }} onClose={() => setShowProfile(false)} profileImage={profileImage} onImageUpload={handleImageUpload} theme={theme} setTheme={handleSetTheme} />}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
