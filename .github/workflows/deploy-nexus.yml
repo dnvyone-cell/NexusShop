@@ -1,0 +1,26 @@
+name: Auto Nexus Update
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-store:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar Codigo
+        uses: actions/checkout@v3
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Instalar Dependencias
+        run: npm install
+
+      - name: Rodar Script Nexus
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RELEASE_DATA: ${{ toJson(github.event.release) }}
+        run: node scripts/update_store.js
